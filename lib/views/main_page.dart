@@ -41,6 +41,8 @@ void _receiveData() {
       String line = buffer.substring(0, index).trim();
       buffer = buffer.substring(index + 1);
 
+      print("Received line: $line");
+
       if (line.contains(":")) {
         final parts = line.split(":");
         if (parts.length == 2) {
@@ -59,7 +61,11 @@ void _receiveData() {
                 gasValue = value;
                 break;
               case "ALERTA":
-                if (value == "GAS") alertaGas = true;
+                if (value == "GAS") {
+                  alertaGas = true;
+                } else if (value == "APAGAR_ALARMA") {
+                  alertaGas = false; 
+                }
                 break;
             }
           });
@@ -68,7 +74,6 @@ void _receiveData() {
     }
   });
 }
-
 
   void _sendData(String data) {
     if (_connection?.isConnected ?? false) {
@@ -110,7 +115,7 @@ void _receiveData() {
     return Scaffold(
       appBar: AppBar(
         centerTitle: true,
-        title: const Text('Flutter ❤ Arduino'),
+        title: const Text('Watchmen Box'),
       ),
       body: Column(
         children: [
@@ -213,18 +218,63 @@ void _receiveData() {
 
           const SizedBox(height: 24),
 
+          // Alerta de gas
           if (alertaGas)
             Container(
+              width: double.infinity,
+              margin: const EdgeInsets.symmetric(horizontal: 16),
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
                 color: Colors.red.shade700,
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black45,
+                    blurRadius: 8,
+                    spreadRadius: 2,
+                  ),
+                ],
               ),
-              child: const Text(
-                "🚨 GAS/HUMO DETECTADO",
-                style: TextStyle(color: Colors.white, fontSize: 18),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  const Text(
+                    "🚨 GAS/HUMO DETECTADO",
+                    style: TextStyle(
+                      color: Colors.white, 
+                      fontSize: 18, 
+                      fontWeight: FontWeight.bold
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: () {
+                        _sendData("APAGAR_ALARMA");
+                        setState(() {
+                          alertaGas = false;
+                        });
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.white,
+                        foregroundColor: Colors.red.shade700,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                      child: const Text(
+                        "Apagar Alarma",
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            )
+            ),
+
         ],
       ),
     ),
