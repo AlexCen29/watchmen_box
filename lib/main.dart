@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:watchmen_box/views/main_page.dart';
+import 'package:watchmen_box/app_bloc_providets.dart';
+import 'package:watchmen_box/config/app.router.dart';
+import 'package:watchmen_box/config/constants/enviroment.dart';
 
 void main() async {
-  runApp(const MainApp());
+  WidgetsFlutterBinding.ensureInitialized();
+  await Environment.initEnviroment();
+  runApp(AppBlocProviders(main: MainApp()));
 }
 
 class MainApp extends StatelessWidget {
@@ -10,10 +14,15 @@ class MainApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      theme: ThemeData(useMaterial3: true),
-      debugShowCheckedModeBanner: false,
-      home: const MainPage(),
+    return Builder(
+      builder: (context) {
+        final router = createAppRouter(context);
+        return MaterialApp.router(
+          theme: ThemeData(useMaterial3: true),
+          debugShowCheckedModeBanner: false,
+          routerConfig: router,
+        );
+      },
     );
   }
 }
