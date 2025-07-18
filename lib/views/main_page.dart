@@ -24,6 +24,18 @@ class _MainPageState extends State<MainPage> {
   String gasValue = "--";
   bool alertaGas = false;
 
+  // Configuración de rangos
+  double tempMin = 15.0;
+  double tempMax = 30.0;
+  double humMin = 30.0;
+  double humMax = 70.0;
+
+  // Estados de alerta
+  bool tempAlert = false;
+  bool humAlert = false;
+  String tempAlertType = ""; // "low" o "high"
+  String humAlertType = ""; // "low" o "high"
+
   void _getDevices() async {
     var res = await _bluetooth.getBondedDevices();
     setState(() => _devices = res);
@@ -53,9 +65,11 @@ void _receiveData() {
             switch (key) {
               case "TEMP":
                 temperatureValue = value;
+                _checkTemperatureRange(value);
                 break;
               case "HUM":
                 humidityValue = value;
+                _checkHumidityRange(value);
                 break;
               case "GAS":
                 gasValue = value;
@@ -79,6 +93,115 @@ void _receiveData() {
     if (_connection?.isConnected ?? false) {
       _connection?.output.add(ascii.encode(data));
     }
+  }
+
+  void _checkTemperatureRange(String value) {
+    if (value == "--") return;
+    
+    double? temp = double.tryParse(value);
+    if (temp != null) {
+      if (temp < tempMin) {
+        tempAlert = true;
+        tempAlertType = "low";
+      } else if (temp > tempMax) {
+        tempAlert = true;
+        tempAlertType = "high";
+      } else {
+        tempAlert = false;
+        tempAlertType = "";
+      }
+    }
+  }
+
+  void _checkHumidityRange(String value) {
+    if (value == "--") return;
+    
+    double? hum = double.tryParse(value);
+    if (hum != null) {
+      if (hum < humMin) {
+        humAlert = true;
+        humAlertType = "low";
+      } else if (hum > humMax) {
+        humAlert = true;
+        humAlertType = "high";
+      } else {
+        humAlert = false;
+        humAlertType = "";
+      }
+    }
+  }
+
+  void _showConfigDialog(String type) {
+    String title = type == "temp" ? "Configurar Temperatura" : "Configurar Humedad";
+    String unit = type == "temp" ? "°C" : "%";
+    double currentMin = type == "temp" ? tempMin : humMin;
+    double currentMax = type == "temp" ? tempMax : humMax;
+    
+    TextEditingController minController = TextEditingController(text: currentMin.toString());
+    TextEditingController maxController = TextEditingController(text: currentMax.toString());
+
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text(title),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: minController,
+                keyboardType: TextInputType.number,
+                decoration: InputDecoration(
+                  labelText: "Valor Mínimo ($unit)",
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              SizedBox(height: 16),
+              TextField(
+                controller: maxController,
+                keyboardType: TextInputType.number,
+                decoration: InputDecoration(
+                  labelText: "Valor Máximo ($unit)",
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: Text("Cancelar"),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                double? min = double.tryParse(minController.text);
+                double? max = double.tryParse(maxController.text);
+                
+                if (min != null && max != null && min < max) {
+                  setState(() {
+                    if (type == "temp") {
+                      tempMin = min;
+                      tempMax = max;
+                      _checkTemperatureRange(temperatureValue);
+                    } else {
+                      humMin = min;
+                      humMax = max;
+                      _checkHumidityRange(humidityValue);
+                    }
+                  });
+                  Navigator.of(context).pop();
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text("Por favor ingresa valores válidos (mínimo < máximo)")),
+                  );
+                }
+              },
+              child: Text("Guardar"),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   void _requestPermission() async {
@@ -210,11 +333,11 @@ void _receiveData() {
 
           const SizedBox(height: 16),
 
-          _buildDataCard("Temperatura", "°C", temperatureValue),
+          _buildDataCard("Temperatura", "°C", temperatureValue, tempAlert, tempAlertType, () => _showConfigDialog("temp")),
           const SizedBox(height: 12),
-          _buildDataCard("Humedad", "%", humidityValue),
+          _buildDataCard("Humedad", "%", humidityValue, humAlert, humAlertType, () => _showConfigDialog("hum")),
           const SizedBox(height: 12),
-          _buildDataCard("Gas Detectado", "", gasValue),
+          _buildDataCard("Gas Detectado", "", gasValue, false, "", null),
 
           const SizedBox(height: 24),
 
@@ -344,25 +467,66 @@ class _MyButtonLedState extends State<MyButtonLed> {
   }
 }
 
-Widget _buildDataCard(String label, String unidad, String value) {
+Widget _buildDataCard(String label, String unidad, String value, bool hasAlert, String alertType, VoidCallback? onConfigTap) {
+  // Determinar el color del contenedor según la alerta
+  Color borderColor = Colors.blueAccent;
+  Color backgroundColor = Colors.white;
+  
+  if (hasAlert) {
+    if (alertType == "low") {
+      borderColor = Colors.blue.shade700;
+      backgroundColor = Colors.blue.shade50;
+    } else if (alertType == "high") {
+      borderColor = Colors.red.shade700;
+      backgroundColor = Colors.red.shade50;
+    }
+  }
+
   return Container(
     padding: const EdgeInsets.all(12),
     margin: const EdgeInsets.symmetric(horizontal: 16),
     decoration: BoxDecoration(
-      color: Colors.white,
-      border: Border.all(color: Colors.blueAccent),
+      color: backgroundColor,
+      border: Border.all(color: borderColor, width: 2),
       borderRadius: BorderRadius.circular(8),
     ),
     child: Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(
-          label,
-          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+        Expanded(
+          child: Row(
+            children: [
+              Text(
+                label,
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+              ),
+              if (hasAlert) ...[
+                const SizedBox(width: 8),
+                Icon(
+                  alertType == "low" ? Icons.keyboard_arrow_down : Icons.keyboard_arrow_up,
+                  color: alertType == "low" ? Colors.blue.shade700 : Colors.red.shade700,
+                  size: 20,
+                ),
+              ],
+            ],
+          ),
         ),
-        Text(
-          "$value $unidad",
-          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+        Row(
+          children: [
+            Text(
+              "$value $unidad",
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+            if (onConfigTap != null) ...[
+              const SizedBox(width: 8),
+              IconButton(
+                onPressed: onConfigTap,
+                icon: const Icon(Icons.edit, size: 20),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+              ),
+            ],
+          ],
         ),
       ],
     ),
