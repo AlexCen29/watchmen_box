@@ -4,9 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:animate_do/animate_do.dart';
 import 'package:watchmen_box/entities/iot_data.dart';
+import 'package:watchmen_box/entities/gas_alarm_data.dart';
 import 'package:watchmen_box/services/iot_data_service.dart';
-import 'package:watchmen_box/services/key_value_storage_service.impl.dart';
-import 'package:watchmen_box/errors/general_errors.dart';
+import 'package:watchmen_box/services/gas_alarm_service.dart';
 
 class MainPage extends StatefulWidget {
   const MainPage({super.key});
@@ -42,10 +42,11 @@ class _MainPageState extends State<MainPage> {
 
   // Servicios para IoT
   late IoTDataService _iotDataService;
-  late KeyValueStorageServiceImpl _storageService;
+  late GasAlarmService _gasAlarmService;
   List<IoTData> _pendingIoTData = [];
+  List<GasAlarmData> _pendingGasAlarmData = [];
   bool _isSyncing = false;
-  
+
   // Variables para mostrar progreso
   int _totalToSync = 0;
   int _currentSyncing = 0;
@@ -57,55 +58,57 @@ class _MainPageState extends State<MainPage> {
     setState(() => _devices = res);
   }
 
-void _receiveData() {
-  String buffer = "";
+  void _receiveData() {
+    String buffer = "";
 
-  _connection?.input?.listen((event) {
-    buffer += String.fromCharCodes(event);
+    _connection?.input?.listen((event) {
+      buffer += String.fromCharCodes(event);
 
-    // dividir en líneas si hay uno o más saltos de línea
-    while (buffer.contains('\n')) {
-      int index = buffer.indexOf('\n');
-      String line = buffer.substring(0, index).trim();
-      buffer = buffer.substring(index + 1);
+      // dividir en líneas si hay uno o más saltos de línea
+      while (buffer.contains('\n')) {
+        int index = buffer.indexOf('\n');
+        String line = buffer.substring(0, index).trim();
+        buffer = buffer.substring(index + 1);
 
-      print("Received line: $line");
+        print("Received line: $line");
 
-      if (line.contains(":")) {
-        final parts = line.split(":");
-        if (parts.length == 2) {
-          final key = parts[0];
-          final value = parts[1];
+        if (line.contains(":")) {
+          final parts = line.split(":");
+          if (parts.length == 2) {
+            final key = parts[0];
+            final value = parts[1];
 
-          setState(() {
-            switch (key) {
-              case "TEMP":
-                temperatureValue = value;
-                _checkTemperatureRange(value);
-                _saveIoTDataTemporarily();
-                break;
-              case "HUM":
-                humidityValue = value;
-                _checkHumidityRange(value);
-                _saveIoTDataTemporarily();
-                break;
-              case "GAS":
-                gasValue = value;
-                break;
-              case "ALERTA":
-                if (value == "GAS") {
-                  alertaGas = true;
-                } else if (value == "APAGAR_ALARMA") {
-                  alertaGas = false; 
-                }
-                break;
-            }
-          });
+            setState(() {
+              switch (key) {
+                case "TEMP":
+                  temperatureValue = value;
+                  _checkTemperatureRange(value);
+                  _saveIoTDataTemporarily();
+                  break;
+                case "HUM":
+                  humidityValue = value;
+                  _checkHumidityRange(value);
+                  _saveIoTDataTemporarily();
+                  break;
+                case "GAS":
+                  gasValue = value;
+                  break;
+                case "ALERTA":
+                  if (value == "GAS") {
+                    if (!alertaGas) {
+                      // Solo si la alarma no estaba activa
+                      alertaGas = true;
+                      _saveGasAlarmData(true); // Guardar activación de alarma
+                    }
+                  }
+                  break;
+              }
+            });
+          }
         }
       }
-    }
-  });
-}
+    });
+  }
 
   void _sendData(String data) {
     if (_connection?.isConnected ?? false) {
@@ -115,7 +118,7 @@ void _receiveData() {
 
   void _checkTemperatureRange(String value) {
     if (value == "--") return;
-    
+
     double? temp = double.tryParse(value);
     if (temp != null) {
       if (temp < tempMin) {
@@ -133,7 +136,7 @@ void _receiveData() {
 
   void _checkHumidityRange(String value) {
     if (value == "--") return;
-    
+
     double? hum = double.tryParse(value);
     if (hum != null) {
       if (hum < humMin) {
@@ -150,13 +153,18 @@ void _receiveData() {
   }
 
   void _showConfigDialog(String type) {
-    String title = type == "temp" ? "Configurar Temperatura" : "Configurar Humedad";
+    String title =
+        type == "temp" ? "Configurar Temperatura" : "Configurar Humedad";
     String unit = type == "temp" ? "°C" : "%";
     double currentMin = type == "temp" ? tempMin : humMin;
     double currentMax = type == "temp" ? tempMax : humMax;
-    
-    TextEditingController minController = TextEditingController(text: currentMin.toString());
-    TextEditingController maxController = TextEditingController(text: currentMax.toString());
+
+    TextEditingController minController = TextEditingController(
+      text: currentMin.toString(),
+    );
+    TextEditingController maxController = TextEditingController(
+      text: currentMax.toString(),
+    );
 
     showDialog(
       context: context,
@@ -194,7 +202,7 @@ void _receiveData() {
               onPressed: () {
                 double? min = double.tryParse(minController.text);
                 double? max = double.tryParse(maxController.text);
-                
+
                 if (min != null && max != null && min < max) {
                   setState(() {
                     if (type == "temp") {
@@ -210,7 +218,11 @@ void _receiveData() {
                   Navigator.of(context).pop();
                 } else {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text("Por favor ingresa valores válidos (mínimo < máximo)")),
+                    SnackBar(
+                      content: Text(
+                        "Por favor ingresa valores válidos (mínimo < máximo)",
+                      ),
+                    ),
                   );
                 }
               },
@@ -227,16 +239,17 @@ void _receiveData() {
     if (temperatureValue != "--" && humidityValue != "--" && !_isSyncing) {
       final temp = double.tryParse(temperatureValue);
       final hum = double.tryParse(humidityValue);
-      
+
       if (temp != null && hum != null) {
         // Verificar si ya tenemos un dato muy reciente (últimos 10 segundos) para evitar duplicados
         final now = DateTime.now();
-        final hasRecentData = _pendingIoTData.any((data) => 
-          now.difference(data.timestamp).inSeconds < 10 &&
-          (data.temperature - temp).abs() < 0.1 &&
-          (data.humidity - hum).abs() < 0.1
+        final hasRecentData = _pendingIoTData.any(
+          (data) =>
+              now.difference(data.timestamp).inSeconds < 10 &&
+              (data.temperature - temp).abs() < 0.1 &&
+              (data.humidity - hum).abs() < 0.1,
         );
-        
+
         if (!hasRecentData) {
           final iotData = IoTData(
             id: DateTime.now().millisecondsSinceEpoch.toString(),
@@ -244,7 +257,7 @@ void _receiveData() {
             temperature: temp,
             humidity: hum,
           );
-          
+
           setState(() {
             _pendingIoTData.add(iotData);
             // Limitar a los últimos 100 registros para no saturar la memoria
@@ -252,9 +265,37 @@ void _receiveData() {
               _pendingIoTData.removeAt(0);
             }
           });
-          
+
           // _savePendingDataToStorage();
         }
+      }
+    }
+  }
+
+  void _saveGasAlarmData(bool isAlarmActive) {
+    // Solo guardar si tenemos un valor de gas válido y no estamos sincronizando
+    if (gasValue != "--" && !_isSyncing) {
+      final gasLevel = double.tryParse(gasValue);
+
+      if (gasLevel != null) {
+        final gasAlarmData = GasAlarmData(
+          id: DateTime.now().millisecondsSinceEpoch.toString(),
+          timestamp: DateTime.now(),
+          gasLevel: gasLevel,
+          isAlarmActive: isAlarmActive,
+        );
+
+        setState(() {
+          _pendingGasAlarmData.add(gasAlarmData);
+          // Limitar a los últimos 50 registros de alarma para no saturar la memoria
+          if (_pendingGasAlarmData.length > 50) {
+            _pendingGasAlarmData.removeAt(0);
+          }
+        });
+
+        print(
+          'Guardada alarma de gas: ${isAlarmActive ? "ACTIVADA" : "DESACTIVADA"} - Nivel: $gasLevel',
+        );
       }
     }
   }
@@ -282,68 +323,6 @@ void _receiveData() {
   //   }
   // }
 
-  Future<void> _syncIoTData() async {
-    if (_isSyncing || _pendingIoTData.isEmpty) return;
-
-    setState(() {
-      _isSyncing = true;
-    });
-
-    try {
-      final List<IoTData> dataToSync = List.from(_pendingIoTData.where((data) => !data.isSynced));
-      final List<String> successfullyUploadedIds = [];
-      
-      for (final data in dataToSync) {
-        try {
-          final success = await _iotDataService.uploadIoTData(
-            date: data.formattedDate,
-            temperature: data.temperature,
-            humidity: data.humidity,
-          );
-          
-          if (success) {
-            successfullyUploadedIds.add(data.id);
-          }
-        } catch (e) {
-          print('Error al sincronizar dato ${data.id}: $e');
-          // Continuar con el siguiente dato
-        }
-      }
-
-      // Remover datos sincronizados exitosamente usando removeWhere de forma segura
-      if (successfullyUploadedIds.isNotEmpty) {
-        setState(() {
-          _pendingIoTData.removeWhere((data) => successfullyUploadedIds.contains(data.id));
-        });
-
-        //await _savePendingDataToStorage();
-      }
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('${successfullyUploadedIds.length} registros sincronizados exitosamente'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
-
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error en sincronización: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    } finally {
-      setState(() {
-        _isSyncing = false;
-      });
-    }
-  }
-
   void _showSyncDialog() {
     showDialog(
       context: context,
@@ -357,18 +336,11 @@ void _receiveData() {
               ),
               title: Row(
                 children: [
-                  Icon(
-                    Icons.cloud_sync,
-                    color: Colors.blue.shade600,
-                    size: 28,
-                  ),
+                  Icon(Icons.cloud_sync, color: Colors.blue.shade600, size: 28),
                   const SizedBox(width: 12),
                   const Text(
                     'Sincronizar Datos',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 20,
-                    ),
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20),
                   ),
                 ],
               ),
@@ -383,35 +355,107 @@ void _receiveData() {
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(color: Colors.blue.shade200),
                       ),
-                      child: Row(
+                      child: Column(
                         children: [
-                          Icon(
-                            Icons.data_usage,
-                            color: Colors.blue.shade600,
-                            size: 24,
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.data_usage,
+                                color: Colors.blue.shade600,
+                                size: 24,
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
                                   'Datos pendientes:',
                                   style: TextStyle(
-                                    fontSize: 14,
-                                    color: Colors.grey.shade600,
-                                  ),
-                                ),
-                                Text(
-                                  '${_pendingIoTData.length} registros',
-                                  style: TextStyle(
-                                    fontSize: 18,
+                                    fontSize: 16,
                                     fontWeight: FontWeight.bold,
                                     color: Colors.blue.shade700,
                                   ),
                                 ),
-                              ],
-                            ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Container(
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color: Colors.blue.shade200,
+                                    ),
+                                  ),
+                                  child: Column(
+                                    children: [
+                                      Icon(
+                                        Icons.thermostat,
+                                        color: Colors.blue.shade600,
+                                        size: 20,
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        '${_pendingIoTData.length}',
+                                        style: TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.blue.shade700,
+                                        ),
+                                      ),
+                                      Text(
+                                        'Temp/Hum',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.grey.shade600,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Container(
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color: Colors.orange.shade200,
+                                    ),
+                                  ),
+                                  child: Column(
+                                    children: [
+                                      Icon(
+                                        Icons.warning,
+                                        color: Colors.orange.shade600,
+                                        size: 20,
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        '${_pendingGasAlarmData.length}',
+                                        style: TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.orange.shade700,
+                                        ),
+                                      ),
+                                      Text(
+                                        'Alarmas',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.grey.shade600,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ],
                       ),
@@ -427,70 +471,75 @@ void _receiveData() {
                   ],
                 ],
               ),
-              actions: _isSyncing ? [] : [
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: Text(
-                    'Cancelar',
-                    style: TextStyle(color: Colors.grey.shade600),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                ElevatedButton.icon(
-                  onPressed: _pendingIoTData.isEmpty ? null : () {
-                    setDialogState(() {});
-                    _syncIoTDataWithProgress(setDialogState);
-                  },
-                  icon: const Icon(Icons.thermostat),
-                  label: const Text('Temperatura/Humedad'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.blue.shade600,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 12,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                ElevatedButton.icon(
-                  onPressed: () {
-                    Navigator.of(context).pop();
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: const Row(
-                          children: [
-                            Icon(Icons.info, color: Colors.white),
-                            SizedBox(width: 8),
-                            Text('Sincronización de alarmas - Próximamente'),
-                          ],
+              actions:
+                  _isSyncing
+                      ? []
+                      : [
+                        ElevatedButton.icon(
+                              onPressed: () => Navigator.of(context).pop(),
+                          icon: const Icon(Icons.cancel),
+                          label: const Text('Cancelar'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.red.shade600,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 12,
+                            ),
+                          ),
                         ),
-                        backgroundColor: Colors.orange.shade600,
-                        behavior: SnackBarBehavior.floating,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
+                        const SizedBox(width: 8),
+                        ElevatedButton.icon(
+                          onPressed:
+                              _pendingIoTData.isEmpty
+                                  ? null
+                                  : () {
+                                    setDialogState(() {});
+                                    _syncIoTDataWithProgress(setDialogState);
+                                  },
+                          icon: const Icon(Icons.thermostat),
+                          label: const Text('Temperatura/Humedad'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.blue.shade600,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 12,
+                            ),
+                          ),
                         ),
-                      ),
-                    );
-                  },
-                  icon: const Icon(Icons.warning),
-                  label: const Text('Alarmas'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.orange.shade600,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 12,
-                    ),
-                  ),
-                ),
-              ],
+                        const SizedBox(width: 8),
+                        ElevatedButton.icon(
+                          onPressed:
+                              _pendingGasAlarmData.isEmpty
+                                  ? null
+                                  : () {
+                                    setDialogState(() {});
+                                    _syncGasAlarmDataWithProgress(
+                                      setDialogState,
+                                    );
+                                  },
+                          icon: const Icon(Icons.warning),
+                          label: const Text('Alarmas'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.orange.shade600,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 12,
+                            ),
+                          ),
+                        ),
+                      ],
             );
           },
         );
@@ -500,7 +549,7 @@ void _receiveData() {
 
   Widget _buildSyncProgressWidget() {
     double progress = _totalToSync > 0 ? _currentSyncing / _totalToSync : 0.0;
-    
+
     return Column(
       children: [
         // Header con icono animado
@@ -526,9 +575,9 @@ void _receiveData() {
             ),
           ],
         ),
-        
+
         const SizedBox(height: 24),
-        
+
         // Barra de progreso principal
         Container(
           padding: const EdgeInsets.all(16),
@@ -568,7 +617,7 @@ void _receiveData() {
                 minHeight: 8,
               ),
               const SizedBox(height: 12),
-              
+
               // Status actual
               Container(
                 width: double.infinity,
@@ -579,17 +628,13 @@ void _receiveData() {
                 ),
                 child: Row(
                   children: [
-                    Icon(
-                      Icons.upload,
-                      size: 16,
-                      color: Colors.blue.shade600,
-                    ),
+                    Icon(Icons.upload, size: 16, color: Colors.blue.shade600),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        _currentSyncStatus.isEmpty 
-                          ? 'Preparando sincronización...' 
-                          : _currentSyncStatus,
+                        _currentSyncStatus.isEmpty
+                            ? 'Preparando sincronización...'
+                            : _currentSyncStatus,
                         style: TextStyle(
                           fontSize: 12,
                           color: Colors.blue.shade700,
@@ -602,9 +647,9 @@ void _receiveData() {
             ],
           ),
         ),
-        
+
         const SizedBox(height: 16),
-        
+
         // Estadísticas
         Row(
           children: [
@@ -685,13 +730,153 @@ void _receiveData() {
     );
   }
 
+  Future<void> _syncGasAlarmDataWithProgress(StateSetter setDialogState) async {
+    if (_isSyncing || _pendingGasAlarmData.isEmpty) return;
+
+    setState(() {
+      _isSyncing = true;
+    });
+
+    setDialogState(() {
+      _totalToSync =
+          _pendingGasAlarmData.where((data) => !data.isSynced).length;
+      _currentSyncing = 0;
+      _successfulUploads = 0;
+      _currentSyncStatus = "Preparando sincronización de alarmas...";
+    });
+
+    try {
+      final List<GasAlarmData> dataToSync = List.from(
+        _pendingGasAlarmData.where((data) => !data.isSynced),
+      );
+      final List<String> successfullyUploadedIds = [];
+
+      for (int i = 0; i < dataToSync.length; i++) {
+        final data = dataToSync[i];
+
+        setDialogState(() {
+          _currentSyncing = i + 1;
+          _currentSyncStatus =
+              "Subiendo alarma ${i + 1}/${dataToSync.length} (${data.alarmStatus} - ${data.displayDateTime})";
+        });
+
+        // Pequeña pausa para mostrar el progreso
+        await Future.delayed(const Duration(milliseconds: 300));
+
+        try {
+          final success = await _gasAlarmService.uploadGasAlarmData(
+            date: data.formattedDate,
+            gasLevel: data.gasLevel,
+          );
+
+          if (success) {
+            successfullyUploadedIds.add(data.id);
+            setDialogState(() {
+              _successfulUploads++;
+              _currentSyncStatus =
+                  "✅ Alarma ${i + 1} subida (${data.alarmStatus} - ${data.displayDateTime})";
+            });
+          } else {
+            setDialogState(() {
+              _currentSyncStatus = "❌ Error en alarma ${i + 1}";
+            });
+          }
+        } catch (e) {
+          print('Error al sincronizar alarma ${data.id}: $e');
+          setDialogState(() {
+            _currentSyncStatus = "❌ Error en alarma ${i + 1}: ${e.toString()}";
+          });
+        }
+      }
+
+      // Remover datos sincronizados exitosamente
+      if (successfullyUploadedIds.isNotEmpty) {
+        setState(() {
+          _pendingGasAlarmData.removeWhere(
+            (data) => successfullyUploadedIds.contains(data.id),
+          );
+        });
+      }
+
+      // Mostrar resultado final
+      setDialogState(() {
+        _currentSyncStatus = "🎉 Sincronización de alarmas completada!";
+      });
+
+      await Future.delayed(const Duration(seconds: 2));
+
+      if (mounted) {
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                Icon(
+                  successfullyUploadedIds.length == dataToSync.length
+                      ? Icons.check_circle
+                      : Icons.warning,
+                  color: Colors.white,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    '${successfullyUploadedIds.length} de ${dataToSync.length} alarmas sincronizadas exitosamente',
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor:
+                successfullyUploadedIds.length == dataToSync.length
+                    ? Colors.green.shade600
+                    : Colors.orange.shade600,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+    } catch (e) {
+      setDialogState(() {
+        _currentSyncStatus = "❌ Error general: $e";
+      });
+
+      await Future.delayed(const Duration(seconds: 2));
+
+      if (mounted) {
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.error, color: Colors.white),
+                const SizedBox(width: 8),
+                Expanded(child: Text('Error en sincronización de alarmas: $e')),
+              ],
+            ),
+            backgroundColor: Colors.red.shade600,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+        );
+      }
+    } finally {
+      setState(() {
+        _isSyncing = false;
+      });
+    }
+  }
+
   Future<void> _syncIoTDataWithProgress(StateSetter setDialogState) async {
     if (_isSyncing || _pendingIoTData.isEmpty) return;
 
     setState(() {
       _isSyncing = true;
     });
-    
+
     setDialogState(() {
       _totalToSync = _pendingIoTData.where((data) => !data.isSynced).length;
       _currentSyncing = 0;
@@ -700,32 +885,36 @@ void _receiveData() {
     });
 
     try {
-      final List<IoTData> dataToSync = List.from(_pendingIoTData.where((data) => !data.isSynced));
+      final List<IoTData> dataToSync = List.from(
+        _pendingIoTData.where((data) => !data.isSynced),
+      );
       final List<String> successfullyUploadedIds = [];
-      
+
       for (int i = 0; i < dataToSync.length; i++) {
         final data = dataToSync[i];
-        
+
         setDialogState(() {
           _currentSyncing = i + 1;
-          _currentSyncStatus = "Subiendo registro ${i + 1}/${dataToSync.length} (${data.displayDateTime})";
+          _currentSyncStatus =
+              "Subiendo registro ${i + 1}/${dataToSync.length} (${data.displayDateTime})";
         });
-        
+
         // Pequeña pausa para mostrar el progreso
         await Future.delayed(const Duration(milliseconds: 300));
-        
+
         try {
           final success = await _iotDataService.uploadIoTData(
             date: data.formattedDate,
             temperature: data.temperature,
             humidity: data.humidity,
           );
-          
+
           if (success) {
             successfullyUploadedIds.add(data.id);
             setDialogState(() {
               _successfulUploads++;
-              _currentSyncStatus = "✅ Registro ${i + 1} subido (${data.displayDateTime})";
+              _currentSyncStatus =
+                  "✅ Registro ${i + 1} subido (${data.displayDateTime})";
             });
           } else {
             setDialogState(() {
@@ -735,7 +924,8 @@ void _receiveData() {
         } catch (e) {
           print('Error al sincronizar dato ${data.id}: $e');
           setDialogState(() {
-            _currentSyncStatus = "❌ Error en registro ${i + 1}: ${e.toString()}";
+            _currentSyncStatus =
+                "❌ Error en registro ${i + 1}: ${e.toString()}";
           });
         }
       }
@@ -743,7 +933,9 @@ void _receiveData() {
       // Remover datos sincronizados exitosamente
       if (successfullyUploadedIds.isNotEmpty) {
         setState(() {
-          _pendingIoTData.removeWhere((data) => successfullyUploadedIds.contains(data.id));
+          _pendingIoTData.removeWhere(
+            (data) => successfullyUploadedIds.contains(data.id),
+          );
         });
       }
 
@@ -751,9 +943,9 @@ void _receiveData() {
       setDialogState(() {
         _currentSyncStatus = "🎉 Sincronización completada!";
       });
-      
+
       await Future.delayed(const Duration(seconds: 2));
-      
+
       if (mounted) {
         Navigator.of(context).pop();
         ScaffoldMessenger.of(context).showSnackBar(
@@ -761,9 +953,9 @@ void _receiveData() {
             content: Row(
               children: [
                 Icon(
-                  successfullyUploadedIds.length == dataToSync.length 
-                    ? Icons.check_circle 
-                    : Icons.warning,
+                  successfullyUploadedIds.length == dataToSync.length
+                      ? Icons.check_circle
+                      : Icons.warning,
                   color: Colors.white,
                 ),
                 const SizedBox(width: 8),
@@ -774,9 +966,10 @@ void _receiveData() {
                 ),
               ],
             ),
-            backgroundColor: successfullyUploadedIds.length == dataToSync.length 
-              ? Colors.green.shade600 
-              : Colors.orange.shade600,
+            backgroundColor:
+                successfullyUploadedIds.length == dataToSync.length
+                    ? Colors.green.shade600
+                    : Colors.orange.shade600,
             behavior: SnackBarBehavior.floating,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(10),
@@ -785,14 +978,13 @@ void _receiveData() {
           ),
         );
       }
-
     } catch (e) {
       setDialogState(() {
         _currentSyncStatus = "❌ Error general: $e";
       });
-      
+
       await Future.delayed(const Duration(seconds: 2));
-      
+
       if (mounted) {
         Navigator.of(context).pop();
         ScaffoldMessenger.of(context).showSnackBar(
@@ -832,8 +1024,8 @@ void _receiveData() {
 
     // Inicializar servicios
     _iotDataService = IoTDataService();
-    _storageService = KeyValueStorageServiceImpl();
-    
+    _gasAlarmService = GasAlarmService();
+
     // Cargar datos pendientes
     // _loadPendingDataFromStorage();
 
@@ -865,17 +1057,21 @@ void _receiveData() {
           Stack(
             children: [
               IconButton(
-                icon: _isSyncing 
-                  ? const SizedBox(
-                      width: 24,
-                      height: 24,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                    )
-                  : const Icon(Icons.sync),
+                icon:
+                    _isSyncing
+                        ? const SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                        : const Icon(Icons.sync),
                 onPressed: _isSyncing ? null : _showSyncDialog,
                 tooltip: 'Sincronizar datos',
               ),
-              if (_pendingIoTData.isNotEmpty)
+              if (_pendingIoTData.isNotEmpty || _pendingGasAlarmData.isNotEmpty)
                 Positioned(
                   right: 8,
                   top: 8,
@@ -890,11 +1086,8 @@ void _receiveData() {
                       minHeight: 14,
                     ),
                     child: Text(
-                      '${_pendingIoTData.length}',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 8,
-                      ),
+                      '${_pendingIoTData.length + _pendingGasAlarmData.length}',
+                      style: const TextStyle(color: Colors.white, fontSize: 8),
                       textAlign: TextAlign.center,
                     ),
                   ),
@@ -935,18 +1128,19 @@ void _receiveData() {
     return ListTile(
       tileColor: Colors.black12,
       title: Text("Conectado a: ${_deviceConnected?.name ?? "ninguno"}"),
-      trailing: _connection?.isConnected ?? false
-          ? TextButton(
-              onPressed: () async {
-                await _connection?.finish();
-                setState(() => _deviceConnected = null);
-              },
-              child: const Text("Desconectar"),
-            )
-          : TextButton(
-              onPressed: _getDevices,
-              child: const Text("Ver dispositivos"),
-            ),
+      trailing:
+          _connection?.isConnected ?? false
+              ? TextButton(
+                onPressed: () async {
+                  await _connection?.finish();
+                  setState(() => _deviceConnected = null);
+                },
+                child: const Text("Desconectar"),
+              )
+              : TextButton(
+                onPressed: _getDevices,
+                child: const Text("Ver dispositivos"),
+              ),
     );
   }
 
@@ -954,129 +1148,154 @@ void _receiveData() {
     return _isConnecting
         ? const Center(child: CircularProgressIndicator())
         : SingleChildScrollView(
-            child: Container(
-              color: Colors.grey.shade100,
-              child: Column(
-                children: [
-                  ...[
-                    for (final device in _devices)
-                      ListTile(
-                        title: Text(device.name ?? device.address),
-                        trailing: TextButton(
-                          child: const Text('conectar'),
-                          onPressed: () async {
-                            setState(() => _isConnecting = true);
-                            _connection = await BluetoothConnection.toAddress(
-                                device.address);
-                            _deviceConnected = device;
-                            _devices = [];
-                            _isConnecting = false;
-                            _receiveData();
-                            setState(() {});
-                          },
-                        ),
-                      )
-                  ]
+          child: Container(
+            color: Colors.grey.shade100,
+            child: Column(
+              children: [
+                ...[
+                  for (final device in _devices)
+                    ListTile(
+                      title: Text(device.name ?? device.address),
+                      trailing: TextButton(
+                        child: const Text('conectar'),
+                        onPressed: () async {
+                          setState(() => _isConnecting = true);
+                          _connection = await BluetoothConnection.toAddress(
+                            device.address,
+                          );
+                          _deviceConnected = device;
+                          _devices = [];
+                          _isConnecting = false;
+                          _receiveData();
+                          setState(() {});
+                        },
+                      ),
+                    ),
                 ],
-              ),
+              ],
             ),
-          );
+          ),
+        );
   }
+
   Widget _buttons() {
-  return FadeInUp(
-    animate: _connection?.isConnected ?? false,
-    child: Container(
-      padding: const EdgeInsets.symmetric(vertical: 24.0, horizontal: 8.0),
-      color: Colors.black12,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          const Text('Monitoreo en tiempo real',
-              style: TextStyle(fontSize: 18.0, fontWeight: FontWeight.bold)),
-
-          const SizedBox(height: 16),
-
-          _buildDataCard("Temperatura", "°C", temperatureValue, tempAlert, tempAlertType, () => _showConfigDialog("temp")),
-          const SizedBox(height: 12),
-          _buildDataCard("Humedad", "%", humidityValue, humAlert, humAlertType, () => _showConfigDialog("hum")),
-          const SizedBox(height: 12),
-          _buildDataCard("Gas Detectado", "", gasValue, false, "", null),
-
-          const SizedBox(height: 24),
-
-          // Alerta de gas
-          if (alertaGas)
-            Container(
-              width: double.infinity,
-              margin: const EdgeInsets.symmetric(horizontal: 16),
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.red.shade700,
-                borderRadius: BorderRadius.circular(12),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black45,
-                    blurRadius: 8,
-                    spreadRadius: 2,
-                  ),
-                ],
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  const Text(
-                    "🚨 GAS/HUMO DETECTADO",
-                    style: TextStyle(
-                      color: Colors.white, 
-                      fontSize: 18, 
-                      fontWeight: FontWeight.bold
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: () {
-                        _sendData("APAGAR_ALARMA");
-                        setState(() {
-                          alertaGas = false;
-                        });
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.white,
-                        foregroundColor: Colors.red.shade700,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                      ),
-                      child: const Text(
-                        "Apagar Alarma",
-                        style: TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+    return FadeInUp(
+      animate: _connection?.isConnected ?? false,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 24.0, horizontal: 8.0),
+        color: Colors.black12,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            const Text(
+              'Monitoreo en tiempo real',
+              style: TextStyle(fontSize: 18.0, fontWeight: FontWeight.bold),
             ),
 
-        ],
-      ),
-    ),
-  );
-}
+            const SizedBox(height: 16),
 
+            _buildDataCard(
+              "Temperatura",
+              "°C",
+              temperatureValue,
+              tempAlert,
+              tempAlertType,
+              () => _showConfigDialog("temp"),
+            ),
+            const SizedBox(height: 12),
+            _buildDataCard(
+              "Humedad",
+              "%",
+              humidityValue,
+              humAlert,
+              humAlertType,
+              () => _showConfigDialog("hum"),
+            ),
+            const SizedBox(height: 12),
+            _buildDataCard("Gas Detectado", "", gasValue, false, "", null),
+
+            const SizedBox(height: 24),
+
+            // Alerta de gas
+            if (alertaGas)
+              Container(
+                width: double.infinity,
+                margin: const EdgeInsets.symmetric(horizontal: 16),
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.red.shade700,
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black45,
+                      blurRadius: 8,
+                      spreadRadius: 2,
+                    ),
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    const Text(
+                      "🚨 GAS/HUMO DETECTADO",
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: () {
+                          // Enviar comando al dispositivo IoT
+                          _sendData("APAGAR_ALARMA");
+
+                          // Esperar 2 segundos y luego quitar la alarma automáticamente
+                          Future.delayed(const Duration(seconds: 2), () {
+                            if (mounted) {
+                              setState(() {
+                                alertaGas = false;
+                              });
+                              // _saveGasAlarmData(false);
+                            }
+                          });
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.white,
+                          foregroundColor: Colors.red.shade700,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                        child: const Text(
+                          "Apagar Alarma",
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class MyButtonLed extends StatefulWidget {
-  const MyButtonLed(
-      {super.key,
-      required this.titulo,
-      required this.data,
-      required this.data2,
-      required this.color,
-      required this.connection});
+  const MyButtonLed({
+    super.key,
+    required this.titulo,
+    required this.data,
+    required this.data2,
+    required this.color,
+    required this.connection,
+  });
   final String titulo;
   final String data;
   final String data2;
@@ -1118,11 +1337,16 @@ class _MyButtonLedState extends State<MyButtonLed> {
         opacity: opacity,
         child: Container(
           decoration: BoxDecoration(
-              color: widget.color, borderRadius: BorderRadius.circular(8.0)),
+            color: widget.color,
+            borderRadius: BorderRadius.circular(8.0),
+          ),
           width: screenSize.width * 0.3,
           height: screenSize.height * 0.08,
           child: Center(
-            child: Text(widget.titulo,style: const TextStyle(color: Colors.white),),
+            child: Text(
+              widget.titulo,
+              style: const TextStyle(color: Colors.white),
+            ),
           ),
         ),
       ),
@@ -1130,11 +1354,18 @@ class _MyButtonLedState extends State<MyButtonLed> {
   }
 }
 
-Widget _buildDataCard(String label, String unidad, String value, bool hasAlert, String alertType, VoidCallback? onConfigTap) {
+Widget _buildDataCard(
+  String label,
+  String unidad,
+  String value,
+  bool hasAlert,
+  String alertType,
+  VoidCallback? onConfigTap,
+) {
   // Determinar el color del contenedor según la alerta
   Color borderColor = Colors.blueAccent;
   Color backgroundColor = Colors.white;
-  
+
   if (hasAlert) {
     if (alertType == "low") {
       borderColor = Colors.blue.shade700;
@@ -1161,13 +1392,21 @@ Widget _buildDataCard(String label, String unidad, String value, bool hasAlert, 
             children: [
               Text(
                 label,
-                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                ),
               ),
               if (hasAlert) ...[
                 const SizedBox(width: 8),
                 Icon(
-                  alertType == "low" ? Icons.keyboard_arrow_down : Icons.keyboard_arrow_up,
-                  color: alertType == "low" ? Colors.blue.shade700 : Colors.red.shade700,
+                  alertType == "low"
+                      ? Icons.keyboard_arrow_down
+                      : Icons.keyboard_arrow_up,
+                  color:
+                      alertType == "low"
+                          ? Colors.blue.shade700
+                          : Colors.red.shade700,
                   size: 20,
                 ),
               ],
@@ -1195,4 +1434,3 @@ Widget _buildDataCard(String label, String unidad, String value, bool hasAlert, 
     ),
   );
 }
-
