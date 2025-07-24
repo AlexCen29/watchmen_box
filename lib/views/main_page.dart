@@ -3,6 +3,10 @@ import 'package:flutter_bluetooth_serial/flutter_bluetooth_serial.dart';
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:animate_do/animate_do.dart';
+import 'package:watchmen_box/entities/iot_data.dart';
+import 'package:watchmen_box/services/iot_data_service.dart';
+import 'package:watchmen_box/services/key_value_storage_service.impl.dart';
+import 'package:watchmen_box/errors/general_errors.dart';
 
 class MainPage extends StatefulWidget {
   const MainPage({super.key});
@@ -36,6 +40,18 @@ class _MainPageState extends State<MainPage> {
   String tempAlertType = ""; // "low" o "high"
   String humAlertType = ""; // "low" o "high"
 
+  // Servicios para IoT
+  late IoTDataService _iotDataService;
+  late KeyValueStorageServiceImpl _storageService;
+  List<IoTData> _pendingIoTData = [];
+  bool _isSyncing = false;
+  
+  // Variables para mostrar progreso
+  int _totalToSync = 0;
+  int _currentSyncing = 0;
+  int _successfulUploads = 0;
+  String _currentSyncStatus = "";
+
   void _getDevices() async {
     var res = await _bluetooth.getBondedDevices();
     setState(() => _devices = res);
@@ -66,10 +82,12 @@ void _receiveData() {
               case "TEMP":
                 temperatureValue = value;
                 _checkTemperatureRange(value);
+                _saveIoTDataTemporarily();
                 break;
               case "HUM":
                 humidityValue = value;
                 _checkHumidityRange(value);
+                _saveIoTDataTemporarily();
                 break;
               case "GAS":
                 gasValue = value;
@@ -204,6 +222,603 @@ void _receiveData() {
     );
   }
 
+  void _saveIoTDataTemporarily() {
+    // Solo guardar si tenemos valores válidos de temperatura y humedad y no estamos sincronizando
+    if (temperatureValue != "--" && humidityValue != "--" && !_isSyncing) {
+      final temp = double.tryParse(temperatureValue);
+      final hum = double.tryParse(humidityValue);
+      
+      if (temp != null && hum != null) {
+        // Verificar si ya tenemos un dato muy reciente (últimos 10 segundos) para evitar duplicados
+        final now = DateTime.now();
+        final hasRecentData = _pendingIoTData.any((data) => 
+          now.difference(data.timestamp).inSeconds < 10 &&
+          (data.temperature - temp).abs() < 0.1 &&
+          (data.humidity - hum).abs() < 0.1
+        );
+        
+        if (!hasRecentData) {
+          final iotData = IoTData(
+            id: DateTime.now().millisecondsSinceEpoch.toString(),
+            timestamp: now,
+            temperature: temp,
+            humidity: hum,
+          );
+          
+          setState(() {
+            _pendingIoTData.add(iotData);
+            // Limitar a los últimos 100 registros para no saturar la memoria
+            if (_pendingIoTData.length > 100) {
+              _pendingIoTData.removeAt(0);
+            }
+          });
+          
+          // _savePendingDataToStorage();
+        }
+      }
+    }
+  }
+
+  // Future<void> _savePendingDataToStorage() async {
+  //   try {
+  //     final jsonList = _pendingIoTData.map((data) => data.toJson()).toList();
+  //     await _storageService.setKeyValue('pendingIoTData', jsonEncode(jsonList));
+  //   } catch (e) {
+  //     print('Error al guardar datos pendientes: $e');
+  //   }
+  // }
+
+  // Future<void> _loadPendingDataFromStorage() async {
+  //   try {
+  //     final jsonString = await _storageService.getValue<String>('pendingIoTData');
+  //     if (jsonString != null) {
+  //       final List<dynamic> jsonList = jsonDecode(jsonString);
+  //       setState(() {
+  //         _pendingIoTData = jsonList.map((json) => IoTData.fromJson(json)).toList();
+  //       });
+  //     }
+  //   } catch (e) {
+  //     print('Error al cargar datos pendientes: $e');
+  //   }
+  // }
+
+  Future<void> _syncIoTData() async {
+    if (_isSyncing || _pendingIoTData.isEmpty) return;
+
+    setState(() {
+      _isSyncing = true;
+    });
+
+    try {
+      final List<IoTData> dataToSync = List.from(_pendingIoTData.where((data) => !data.isSynced));
+      final List<String> successfullyUploadedIds = [];
+      
+      for (final data in dataToSync) {
+        try {
+          final success = await _iotDataService.uploadIoTData(
+            date: data.formattedDate,
+            temperature: data.temperature,
+            humidity: data.humidity,
+          );
+          
+          if (success) {
+            successfullyUploadedIds.add(data.id);
+          }
+        } catch (e) {
+          print('Error al sincronizar dato ${data.id}: $e');
+          // Continuar con el siguiente dato
+        }
+      }
+
+      // Remover datos sincronizados exitosamente usando removeWhere de forma segura
+      if (successfullyUploadedIds.isNotEmpty) {
+        setState(() {
+          _pendingIoTData.removeWhere((data) => successfullyUploadedIds.contains(data.id));
+        });
+
+        //await _savePendingDataToStorage();
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${successfullyUploadedIds.length} registros sincronizados exitosamente'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error en sincronización: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      setState(() {
+        _isSyncing = false;
+      });
+    }
+  }
+
+  void _showSyncDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: !_isSyncing,
+      builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+              title: Row(
+                children: [
+                  Icon(
+                    Icons.cloud_sync,
+                    color: Colors.blue.shade600,
+                    size: 28,
+                  ),
+                  const SizedBox(width: 12),
+                  const Text(
+                    'Sincronizar Datos',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 20,
+                    ),
+                  ),
+                ],
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (!_isSyncing) ...[
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.shade50,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.blue.shade200),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.data_usage,
+                            color: Colors.blue.shade600,
+                            size: 24,
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Datos pendientes:',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: Colors.grey.shade600,
+                                  ),
+                                ),
+                                Text(
+                                  '${_pendingIoTData.length} registros',
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.blue.shade700,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    const Text(
+                      '¿Qué tipo de datos deseas sincronizar?',
+                      style: TextStyle(fontSize: 16),
+                      textAlign: TextAlign.center,
+                    ),
+                  ] else ...[
+                    _buildSyncProgressWidget(),
+                  ],
+                ],
+              ),
+              actions: _isSyncing ? [] : [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: Text(
+                    'Cancelar',
+                    style: TextStyle(color: Colors.grey.shade600),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                ElevatedButton.icon(
+                  onPressed: _pendingIoTData.isEmpty ? null : () {
+                    setDialogState(() {});
+                    _syncIoTDataWithProgress(setDialogState);
+                  },
+                  icon: const Icon(Icons.thermostat),
+                  label: const Text('Temperatura/Humedad'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blue.shade600,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                ElevatedButton.icon(
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: const Row(
+                          children: [
+                            Icon(Icons.info, color: Colors.white),
+                            SizedBox(width: 8),
+                            Text('Sincronización de alarmas - Próximamente'),
+                          ],
+                        ),
+                        backgroundColor: Colors.orange.shade600,
+                        behavior: SnackBarBehavior.floating,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.warning),
+                  label: const Text('Alarmas'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.orange.shade600,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildSyncProgressWidget() {
+    double progress = _totalToSync > 0 ? _currentSyncing / _totalToSync : 0.0;
+    
+    return Column(
+      children: [
+        // Header con icono animado
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            SizedBox(
+              width: 32,
+              height: 32,
+              child: CircularProgressIndicator(
+                strokeWidth: 3,
+                valueColor: AlwaysStoppedAnimation<Color>(Colors.blue.shade600),
+              ),
+            ),
+            const SizedBox(width: 16),
+            Text(
+              'Sincronizando...',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Colors.blue.shade700,
+              ),
+            ),
+          ],
+        ),
+        
+        const SizedBox(height: 24),
+        
+        // Barra de progreso principal
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.grey.shade50,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.grey.shade200),
+          ),
+          child: Column(
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Progreso:',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.grey.shade600,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  Text(
+                    '$_currentSyncing / $_totalToSync',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.blue.shade700,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              LinearProgressIndicator(
+                value: progress,
+                backgroundColor: Colors.grey.shade200,
+                valueColor: AlwaysStoppedAnimation<Color>(Colors.blue.shade600),
+                minHeight: 8,
+              ),
+              const SizedBox(height: 12),
+              
+              // Status actual
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.upload,
+                      size: 16,
+                      color: Colors.blue.shade600,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _currentSyncStatus.isEmpty 
+                          ? 'Preparando sincronización...' 
+                          : _currentSyncStatus,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.blue.shade700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        
+        const SizedBox(height: 16),
+        
+        // Estadísticas
+        Row(
+          children: [
+            Expanded(
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.green.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.green.shade200),
+                ),
+                child: Column(
+                  children: [
+                    Icon(
+                      Icons.check_circle,
+                      color: Colors.green.shade600,
+                      size: 20,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '$_successfulUploads',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.green.shade700,
+                      ),
+                    ),
+                    Text(
+                      'Exitosos',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.green.shade600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.orange.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.orange.shade200),
+                ),
+                child: Column(
+                  children: [
+                    Icon(
+                      Icons.pending,
+                      color: Colors.orange.shade600,
+                      size: 20,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${_totalToSync - _currentSyncing}',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.orange.shade700,
+                      ),
+                    ),
+                    Text(
+                      'Pendientes',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.orange.shade600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Future<void> _syncIoTDataWithProgress(StateSetter setDialogState) async {
+    if (_isSyncing || _pendingIoTData.isEmpty) return;
+
+    setState(() {
+      _isSyncing = true;
+    });
+    
+    setDialogState(() {
+      _totalToSync = _pendingIoTData.where((data) => !data.isSynced).length;
+      _currentSyncing = 0;
+      _successfulUploads = 0;
+      _currentSyncStatus = "Preparando sincronización...";
+    });
+
+    try {
+      final List<IoTData> dataToSync = List.from(_pendingIoTData.where((data) => !data.isSynced));
+      final List<String> successfullyUploadedIds = [];
+      
+      for (int i = 0; i < dataToSync.length; i++) {
+        final data = dataToSync[i];
+        
+        setDialogState(() {
+          _currentSyncing = i + 1;
+          _currentSyncStatus = "Subiendo registro ${i + 1}/${dataToSync.length} (${data.displayDateTime})";
+        });
+        
+        // Pequeña pausa para mostrar el progreso
+        await Future.delayed(const Duration(milliseconds: 300));
+        
+        try {
+          final success = await _iotDataService.uploadIoTData(
+            date: data.formattedDate,
+            temperature: data.temperature,
+            humidity: data.humidity,
+          );
+          
+          if (success) {
+            successfullyUploadedIds.add(data.id);
+            setDialogState(() {
+              _successfulUploads++;
+              _currentSyncStatus = "✅ Registro ${i + 1} subido (${data.displayDateTime})";
+            });
+          } else {
+            setDialogState(() {
+              _currentSyncStatus = "❌ Error en registro ${i + 1}";
+            });
+          }
+        } catch (e) {
+          print('Error al sincronizar dato ${data.id}: $e');
+          setDialogState(() {
+            _currentSyncStatus = "❌ Error en registro ${i + 1}: ${e.toString()}";
+          });
+        }
+      }
+
+      // Remover datos sincronizados exitosamente
+      if (successfullyUploadedIds.isNotEmpty) {
+        setState(() {
+          _pendingIoTData.removeWhere((data) => successfullyUploadedIds.contains(data.id));
+        });
+      }
+
+      // Mostrar resultado final
+      setDialogState(() {
+        _currentSyncStatus = "🎉 Sincronización completada!";
+      });
+      
+      await Future.delayed(const Duration(seconds: 2));
+      
+      if (mounted) {
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                Icon(
+                  successfullyUploadedIds.length == dataToSync.length 
+                    ? Icons.check_circle 
+                    : Icons.warning,
+                  color: Colors.white,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    '${successfullyUploadedIds.length} de ${dataToSync.length} registros sincronizados exitosamente',
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor: successfullyUploadedIds.length == dataToSync.length 
+              ? Colors.green.shade600 
+              : Colors.orange.shade600,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+
+    } catch (e) {
+      setDialogState(() {
+        _currentSyncStatus = "❌ Error general: $e";
+      });
+      
+      await Future.delayed(const Duration(seconds: 2));
+      
+      if (mounted) {
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.error, color: Colors.white),
+                const SizedBox(width: 8),
+                Expanded(child: Text('Error en sincronización: $e')),
+              ],
+            ),
+            backgroundColor: Colors.red.shade600,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+        );
+      }
+    } finally {
+      setState(() {
+        _isSyncing = false;
+      });
+    }
+  }
+
   void _requestPermission() async {
     await Permission.location.request();
     await Permission.bluetooth.request();
@@ -214,6 +829,13 @@ void _receiveData() {
   @override
   void initState() {
     super.initState();
+
+    // Inicializar servicios
+    _iotDataService = IoTDataService();
+    _storageService = KeyValueStorageServiceImpl();
+    
+    // Cargar datos pendientes
+    // _loadPendingDataFromStorage();
 
     _requestPermission();
 
@@ -239,6 +861,47 @@ void _receiveData() {
       appBar: AppBar(
         centerTitle: true,
         title: const Text('Watchmen Box'),
+        actions: [
+          Stack(
+            children: [
+              IconButton(
+                icon: _isSyncing 
+                  ? const SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    )
+                  : const Icon(Icons.sync),
+                onPressed: _isSyncing ? null : _showSyncDialog,
+                tooltip: 'Sincronizar datos',
+              ),
+              if (_pendingIoTData.isNotEmpty)
+                Positioned(
+                  right: 8,
+                  top: 8,
+                  child: Container(
+                    padding: const EdgeInsets.all(2),
+                    decoration: BoxDecoration(
+                      color: Colors.red,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    constraints: const BoxConstraints(
+                      minWidth: 14,
+                      minHeight: 14,
+                    ),
+                    child: Text(
+                      '${_pendingIoTData.length}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 8,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ],
       ),
       body: Column(
         children: [
