@@ -100,6 +100,9 @@ class _MainPageState extends State<MainPage> {
                       alertaGas = true;
                       _saveGasAlarmData(true); // Guardar activación de alarma
                     }
+                  } else if (value == "APAGAR_ALARMA") {
+                    // Apagar alarma cuando se presiona el botón en el Arduino
+                    alertaGas = false;
                   }
                   break;
               }
@@ -1132,6 +1135,9 @@ class _MainPageState extends State<MainPage> {
           _connection?.isConnected ?? false
               ? TextButton(
                 onPressed: () async {
+                  // Enviar comando para apagar LED de conexión antes de desconectar
+                  _sendData("LED_DESCONECTADO");
+                  await Future.delayed(const Duration(milliseconds: 500)); // Pequeña pausa
                   await _connection?.finish();
                   setState(() => _deviceConnected = null);
                 },
@@ -1167,6 +1173,8 @@ class _MainPageState extends State<MainPage> {
                           _devices = [];
                           _isConnecting = false;
                           _receiveData();
+                          // Enviar comando para encender LED de conexión
+                          _sendData("LED_CONECTADO");
                           setState(() {});
                         },
                       ),
