@@ -35,16 +35,25 @@ class RenderAuthService {
     }
   }
   
-  Future<dynamic> checkAuthStatus(String accessToken) async {
+  Future<User> checkAuthStatus(String accessToken) async {
     try{
-      await dio.post(
-        '/gas-alarm/get-all',
+      final response = await dio.post(
+        '/auth/check-auth-status',
         options: Options(
           headers: {
             'Authorization': 'Bearer $accessToken',
           }
         )
       );
+
+      final Map<String, dynamic> data = {
+        ...response.data,
+        "token": accessToken
+      };
+
+      final user = User.mapJsonToUserEntity(data);
+
+      return user;
 
     } on DioException catch (e) {
       if( e.response?.statusCode == 401 ) throw InvalidToken();
