@@ -3,10 +3,12 @@ import 'package:flutter_bluetooth_serial/flutter_bluetooth_serial.dart';
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:animate_do/animate_do.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:watchmen_box/entities/iot_data.dart';
 import 'package:watchmen_box/entities/gas_alarm_data.dart';
 import 'package:watchmen_box/services/iot_data_service.dart';
 import 'package:watchmen_box/services/gas_alarm_service.dart';
+import 'package:watchmen_box/providers/auth_bloc/auth_bloc.dart';
 
 class MainPage extends StatefulWidget {
   const MainPage({super.key});
@@ -263,8 +265,8 @@ class _MainPageState extends State<MainPage> {
 
           setState(() {
             _pendingIoTData.add(iotData);
-            // Limitar a los últimos 100 registros para no saturar la memoria
-            if (_pendingIoTData.length > 100) {
+            // Limitar a los últimos 999 registros para no saturar la memoria
+            if (_pendingIoTData.length > 999) {
               _pendingIoTData.removeAt(0);
             }
           });
@@ -329,220 +331,226 @@ class _MainPageState extends State<MainPage> {
   void _showSyncDialog() {
     showDialog(
       context: context,
-      barrierDismissible: !_isSyncing,
+      barrierDismissible: false, // Cambio: siempre false para evitar que se cierre accidentalmente
       builder: (BuildContext context) {
         return StatefulBuilder(
           builder: (context, setDialogState) {
-            return AlertDialog(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20),
-              ),
-              title: Row(
-                children: [
-                  Icon(Icons.cloud_sync, color: Colors.blue.shade600, size: 28),
-                  const SizedBox(width: 12),
-                  const Text(
-                    'Sincronizar Datos',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20),
-                  ),
-                ],
-              ),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (!_isSyncing) ...[
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: Colors.blue.shade50,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.blue.shade200),
+            return WillPopScope(
+              onWillPop: () async {
+                // Evitar que se cierre el diálogo mientras se sincroniza
+                return !_isSyncing;
+              },
+              child: AlertDialog(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                title: Row(
+                  children: [
+                    Icon(Icons.cloud_sync, color: Colors.blue.shade600, size: 28),
+                    const SizedBox(width: 12),
+                    const Text(
+                      'Sincronizar Datos',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20),
+                    ),
+                  ],
+                ),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (!_isSyncing) ...[
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.shade50,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.blue.shade200),
+                        ),
+                        child: Column(
+                          children: [
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.data_usage,
+                                  color: Colors.blue.shade600,
+                                  size: 24,
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Text(
+                                    'Datos pendientes:',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.blue.shade700,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Container(
+                                    padding: const EdgeInsets.all(8),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                        color: Colors.blue.shade200,
+                                      ),
+                                    ),
+                                    child: Column(
+                                      children: [
+                                        Icon(
+                                          Icons.thermostat,
+                                          color: Colors.blue.shade600,
+                                          size: 20,
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          '${_pendingIoTData.length}',
+                                          style: TextStyle(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.blue.shade700,
+                                          ),
+                                        ),
+                                        Text(
+                                          'Temp/Hum',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.grey.shade600,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Container(
+                                    padding: const EdgeInsets.all(8),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                        color: Colors.orange.shade200,
+                                      ),
+                                    ),
+                                    child: Column(
+                                      children: [
+                                        Icon(
+                                          Icons.warning,
+                                          color: Colors.orange.shade600,
+                                          size: 20,
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          '${_pendingGasAlarmData.length}',
+                                          style: TextStyle(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.orange.shade700,
+                                          ),
+                                        ),
+                                        Text(
+                                          'Alarmas',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.grey.shade600,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
                       ),
-                      child: Column(
-                        children: [
-                          Row(
-                            children: [
-                              Icon(
-                                Icons.data_usage,
-                                color: Colors.blue.shade600,
-                                size: 24,
+                      const SizedBox(height: 20),
+                      const Text(
+                        '¿Qué tipo de datos deseas sincronizar?',
+                        style: TextStyle(fontSize: 16),
+                        textAlign: TextAlign.center,
+                      ),
+                    ] else ...[
+                      _buildSyncProgressWidget(),
+                    ],
+                  ],
+                ),
+                actions:
+                    _isSyncing
+                        ? []
+                        : [
+                          ElevatedButton.icon(
+                                onPressed: () => Navigator.of(context).pop(),
+                            icon: const Icon(Icons.cancel),
+                            label: const Text('Cancelar'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.red.shade600,
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
                               ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Text(
-                                  'Datos pendientes:',
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.blue.shade700,
-                                  ),
-                                ),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 12,
                               ),
-                            ],
+                            ),
                           ),
-                          const SizedBox(height: 12),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Container(
-                                  padding: const EdgeInsets.all(8),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white,
-                                    borderRadius: BorderRadius.circular(8),
-                                    border: Border.all(
-                                      color: Colors.blue.shade200,
-                                    ),
-                                  ),
-                                  child: Column(
-                                    children: [
-                                      Icon(
-                                        Icons.thermostat,
-                                        color: Colors.blue.shade600,
-                                        size: 20,
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        '${_pendingIoTData.length}',
-                                        style: TextStyle(
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.bold,
-                                          color: Colors.blue.shade700,
-                                        ),
-                                      ),
-                                      Text(
-                                        'Temp/Hum',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: Colors.grey.shade600,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
+                          const SizedBox(width: 8),
+                          ElevatedButton.icon(
+                            onPressed:
+                                _pendingIoTData.isEmpty
+                                    ? null
+                                    : () {
+                                      setDialogState(() {});
+                                      _syncIoTDataWithProgress(setDialogState);
+                                    },
+                            icon: const Icon(Icons.thermostat),
+                            label: const Text('Temperatura/Humedad'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.blue.shade600,
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
                               ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Container(
-                                  padding: const EdgeInsets.all(8),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white,
-                                    borderRadius: BorderRadius.circular(8),
-                                    border: Border.all(
-                                      color: Colors.orange.shade200,
-                                    ),
-                                  ),
-                                  child: Column(
-                                    children: [
-                                      Icon(
-                                        Icons.warning,
-                                        color: Colors.orange.shade600,
-                                        size: 20,
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        '${_pendingGasAlarmData.length}',
-                                        style: TextStyle(
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.bold,
-                                          color: Colors.orange.shade700,
-                                        ),
-                                      ),
-                                      Text(
-                                        'Alarmas',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: Colors.grey.shade600,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 12,
                               ),
-                            ],
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          ElevatedButton.icon(
+                            onPressed:
+                                _pendingGasAlarmData.isEmpty
+                                    ? null
+                                    : () {
+                                      setDialogState(() {});
+                                      _syncGasAlarmDataWithProgress(
+                                        setDialogState,
+                                      );
+                                    },
+                            icon: const Icon(Icons.warning),
+                            label: const Text('Alarmas'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.orange.shade600,
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 12,
+                              ),
+                            ),
                           ),
                         ],
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                    const Text(
-                      '¿Qué tipo de datos deseas sincronizar?',
-                      style: TextStyle(fontSize: 16),
-                      textAlign: TextAlign.center,
-                    ),
-                  ] else ...[
-                    _buildSyncProgressWidget(),
-                  ],
-                ],
               ),
-              actions:
-                  _isSyncing
-                      ? []
-                      : [
-                        ElevatedButton.icon(
-                              onPressed: () => Navigator.of(context).pop(),
-                          icon: const Icon(Icons.cancel),
-                          label: const Text('Cancelar'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.red.shade600,
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 12,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        ElevatedButton.icon(
-                          onPressed:
-                              _pendingIoTData.isEmpty
-                                  ? null
-                                  : () {
-                                    setDialogState(() {});
-                                    _syncIoTDataWithProgress(setDialogState);
-                                  },
-                          icon: const Icon(Icons.thermostat),
-                          label: const Text('Temperatura/Humedad'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.blue.shade600,
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 12,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        ElevatedButton.icon(
-                          onPressed:
-                              _pendingGasAlarmData.isEmpty
-                                  ? null
-                                  : () {
-                                    setDialogState(() {});
-                                    _syncGasAlarmDataWithProgress(
-                                      setDialogState,
-                                    );
-                                  },
-                          icon: const Icon(Icons.warning),
-                          label: const Text('Alarmas'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.orange.shade600,
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 12,
-                            ),
-                          ),
-                        ),
-                      ],
             );
           },
         );
@@ -1048,6 +1056,51 @@ class _MainPageState extends State<MainPage> {
           break;
       }
     });
+
+    // Verificar si ya hay una conexión activa
+    _checkExistingConnection();
+  }
+
+  void _checkExistingConnection() async {
+    try {
+      // Verificar si hay una conexión activa
+      if (_connection?.isConnected ?? false) {
+        print('Conexión existente detectada');
+        setState(() {
+          // Si ya estamos conectados, no mostrar lista de dispositivos
+          _devices = [];
+        });
+        _receiveData();
+        // Enviar comando para asegurar que el LED esté encendido
+        _sendData("LED_CONECTADO");
+      } else {
+        print('No hay conexión activa');
+        // Si no hay conexión, asegurar que el estado esté limpio
+        setState(() {
+          _deviceConnected = null;
+          _connection = null;
+          temperatureValue = "--";
+          humidityValue = "--";
+          gasValue = "--";
+          alertaGas = false;
+          tempAlert = false;
+          humAlert = false;
+        });
+      }
+    } catch (e) {
+      print('Error verificando conexión existente: $e');
+      // En caso de error, limpiar el estado
+      setState(() {
+        _deviceConnected = null;
+        _connection = null;
+        temperatureValue = "--";
+        humidityValue = "--";
+        gasValue = "--";
+        alertaGas = false;
+        tempAlert = false;
+        humAlert = false;
+      });
+    }
   }
 
   @override
@@ -1057,6 +1110,41 @@ class _MainPageState extends State<MainPage> {
         centerTitle: true,
         title: const Text('Watchmen Box'),
         actions: [
+          // Botón de logout
+          IconButton(
+            icon: const Icon(Icons.logout),
+            onPressed: () {
+              // Mostrar diálogo de confirmación
+              showDialog(
+                context: context,
+                builder: (BuildContext context) {
+                  return AlertDialog(
+                    title: const Text('Cerrar Sesión'),
+                    content: const Text('¿Estás seguro de que quieres cerrar sesión?'),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        child: const Text('Cancelar'),
+                      ),
+                      ElevatedButton(
+                        onPressed: () {
+                          // Ejecutar logout
+                          context.read<AuthBloc>().add(LogoutEvent());
+                          Navigator.of(context).pop();
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.red,
+                          foregroundColor: Colors.white,
+                        ),
+                        child: const Text('Cerrar Sesión'),
+                      ),
+                    ],
+                  );
+                },
+              );
+            },
+            tooltip: 'Cerrar sesión',
+          ),
           Stack(
             children: [
               IconButton(
@@ -1135,11 +1223,43 @@ class _MainPageState extends State<MainPage> {
           _connection?.isConnected ?? false
               ? TextButton(
                 onPressed: () async {
-                  // Enviar comando para apagar LED de conexión antes de desconectar
-                  _sendData("LED_DESCONECTADO");
-                  await Future.delayed(const Duration(milliseconds: 500)); // Pequeña pausa
-                  await _connection?.finish();
-                  setState(() => _deviceConnected = null);
+                  try {
+                    // Enviar comando para apagar LED de conexión antes de desconectar
+                    _sendData("LED_DESCONECTADO");
+                    await Future.delayed(const Duration(milliseconds: 500)); // Pequeña pausa
+                    await _connection?.finish();
+                    setState(() {
+                      _deviceConnected = null;
+                      _connection = null;
+                      // Resetear valores de sensores
+                      temperatureValue = "--";
+                      humidityValue = "--";
+                      gasValue = "--";
+                      alertaGas = false;
+                      tempAlert = false;
+                      humAlert = false;
+                    });
+                    
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Desconectado del dispositivo'),
+                        backgroundColor: Colors.orange,
+                      ),
+                    );
+                  } catch (e) {
+                    print('Error al desconectar: $e');
+                    // Forzar desconexión local aunque haya error
+                    setState(() {
+                      _deviceConnected = null;
+                      _connection = null;
+                      temperatureValue = "--";
+                      humidityValue = "--";
+                      gasValue = "--";
+                      alertaGas = false;
+                      tempAlert = false;
+                      humAlert = false;
+                    });
+                  }
                 },
                 child: const Text("Desconectar"),
               )
@@ -1151,6 +1271,41 @@ class _MainPageState extends State<MainPage> {
   }
 
   Widget _listDevices() {
+    // Si ya estamos conectados, mostrar un mensaje en lugar de la lista
+    // if (_connection?.isConnected ?? false) {
+    //   return Container(
+    //     color: Colors.green.shade50,
+    //     padding: const EdgeInsets.all(16),
+    //     child: Column(
+    //       mainAxisAlignment: MainAxisAlignment.center,
+    //       children: [
+    //         Icon(
+    //           Icons.bluetooth_connected,
+    //           size: 48,
+    //           color: Colors.green.shade600,
+    //         ),
+    //         const SizedBox(height: 16),
+    //         Text(
+    //           'Conectado exitosamente',
+    //           style: TextStyle(
+    //             fontSize: 18,
+    //             fontWeight: FontWeight.bold,
+    //             color: Colors.green.shade700,
+    //           ),
+    //         ),
+    //         const SizedBox(height: 8),
+    //         Text(
+    //           'Dispositivo: ${_deviceConnected?.name ?? "Desconocido"}',
+    //           style: TextStyle(
+    //             fontSize: 14,
+    //             color: Colors.green.shade600,
+    //           ),
+    //         ),
+    //       ],
+    //     ),
+    //   );
+    // }
+
     return _isConnecting
         ? const Center(child: CircularProgressIndicator())
         : SingleChildScrollView(
@@ -1165,17 +1320,52 @@ class _MainPageState extends State<MainPage> {
                       trailing: TextButton(
                         child: const Text('conectar'),
                         onPressed: () async {
+                          // Verificar si ya estamos conectados antes de intentar conectar
+                          if (_connection?.isConnected ?? false) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Ya tienes una conexión activa'),
+                                backgroundColor: Colors.orange,
+                              ),
+                            );
+                            return;
+                          }
+
                           setState(() => _isConnecting = true);
-                          _connection = await BluetoothConnection.toAddress(
-                            device.address,
-                          );
-                          _deviceConnected = device;
-                          _devices = [];
-                          _isConnecting = false;
-                          _receiveData();
-                          // Enviar comando para encender LED de conexión
-                          _sendData("LED_CONECTADO");
-                          setState(() {});
+                          
+                          try {
+                            _connection = await BluetoothConnection.toAddress(
+                              device.address,
+                            );
+                            _deviceConnected = device;
+                            _devices = [];
+                            _isConnecting = false;
+                            _receiveData();
+                            // Enviar comando para encender LED de conexión
+                            _sendData("LED_CONECTADO");
+                            setState(() {});
+                            
+                            // Mostrar mensaje de éxito
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Conectado a ${device.name ?? device.address}'),
+                                backgroundColor: Colors.green,
+                              ),
+                            );
+                          } catch (e) {
+                            setState(() => _isConnecting = false);
+                            
+                            // Mostrar error específico
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Error al conectar: ${e.toString()}'),
+                                backgroundColor: Colors.red,
+                                duration: const Duration(seconds: 4),
+                              ),
+                            );
+                            
+                            print('Error de conexión: $e');
+                          }
                         },
                       ),
                     ),
