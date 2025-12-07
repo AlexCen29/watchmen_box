@@ -9,6 +9,7 @@ import 'package:watchmen_box/entities/gas_alarm_data.dart';
 import 'package:watchmen_box/services/iot_data_service.dart';
 import 'package:watchmen_box/services/gas_alarm_service.dart';
 import 'package:watchmen_box/providers/auth_bloc/auth_bloc.dart';
+import 'package:watchmen_box/views/wifi_config_page.dart';
 
 class MainPage extends StatefulWidget {
   const MainPage({super.key});
@@ -63,56 +64,120 @@ class _MainPageState extends State<MainPage> {
   void _receiveData() {
     String buffer = "";
 
-    _connection?.input?.listen((event) {
-      buffer += String.fromCharCodes(event);
+    _connection?.input?.listen(
+      (event) {
+        buffer += String.fromCharCodes(event);
 
-      // dividir en líneas si hay uno o más saltos de línea
-      while (buffer.contains('\n')) {
-        int index = buffer.indexOf('\n');
-        String line = buffer.substring(0, index).trim();
-        buffer = buffer.substring(index + 1);
+        // dividir en líneas si hay uno o más saltos de línea
+        while (buffer.contains('\n')) {
+          int index = buffer.indexOf('\n');
+          String line = buffer.substring(0, index).trim();
+          buffer = buffer.substring(index + 1);
 
-        print("Received line: $line");
+          print("Received line: $line");
 
-        if (line.contains(":")) {
-          final parts = line.split(":");
-          if (parts.length == 2) {
-            final key = parts[0];
-            final value = parts[1];
+          if (line.contains(":")) {
+            final parts = line.split(":");
+            if (parts.length == 2) {
+              final key = parts[0];
+              final value = parts[1];
 
-            setState(() {
-              switch (key) {
-                case "TEMP":
-                  temperatureValue = value;
-                  _checkTemperatureRange(value);
-                  _saveIoTDataTemporarily();
-                  break;
-                case "HUM":
-                  humidityValue = value;
-                  _checkHumidityRange(value);
-                  _saveIoTDataTemporarily();
-                  break;
-                case "GAS":
-                  gasValue = value;
-                  break;
-                case "ALERTA":
-                  if (value == "GAS") {
-                    if (!alertaGas) {
-                      // Solo si la alarma no estaba activa
-                      alertaGas = true;
-                      _saveGasAlarmData(true); // Guardar activación de alarma
+              setState(() {
+                switch (key) {
+                  case "TEMP":
+                    temperatureValue = value;
+                    _checkTemperatureRange(value);
+                    _saveIoTDataTemporarily();
+                    break;
+                  case "HUM":
+                    humidityValue = value;
+                    _checkHumidityRange(value);
+                    _saveIoTDataTemporarily();
+                    break;
+                  case "GAS":
+                    gasValue = value;
+                    break;
+                  case "ALERTA":
+                    if (value == "GAS") {
+                      if (!alertaGas) {
+                        // Solo si la alarma no estaba activa
+                        alertaGas = true;
+                        _saveGasAlarmData(true); // Guardar activación de alarma
+                      }
+                    } else if (value == "APAGAR_ALARMA") {
+                      // Apagar alarma cuando se presiona el botón en el Arduino
+                      alertaGas = false;
                     }
-                  } else if (value == "APAGAR_ALARMA") {
-                    // Apagar alarma cuando se presiona el botón en el Arduino
-                    alertaGas = false;
-                  }
-                  break;
-              }
-            });
+                    break;
+                }
+              });
+            }
           }
         }
-      }
-    });
+      },
+      onDone: () {
+        // Conexión terminada - limpiar estado
+        print("🔴 Conexión Bluetooth perdida");
+        setState(() {
+          _deviceConnected = null;
+          _connection = null;
+          temperatureValue = "--";
+          humidityValue = "--";
+          gasValue = "--";
+          alertaGas = false;
+          tempAlert = false;
+          humAlert = false;
+        });
+        
+        // Mostrar notificación al usuario
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Row(
+                children: [
+                  Icon(Icons.bluetooth_disabled, color: Colors.white),
+                  SizedBox(width: 8),
+                  Text('Conexión Bluetooth perdida'),
+                ],
+              ),
+              backgroundColor: Colors.red,
+              duration: Duration(seconds: 3),
+            ),
+          );
+        }
+      },
+      onError: (error) {
+        // Error en la conexión - limpiar estado
+        print("❌ Error en conexión Bluetooth: $error");
+        setState(() {
+          _deviceConnected = null;
+          _connection = null;
+          temperatureValue = "--";
+          humidityValue = "--";
+          gasValue = "--";
+          alertaGas = false;
+          tempAlert = false;
+          humAlert = false;
+        });
+        
+        // Mostrar notificación al usuario
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  const Icon(Icons.error, color: Colors.white),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text('Error en conexión: ${error.toString()}')),
+                ],
+              ),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 4),
+            ),
+          );
+        }
+      },
+    );
   }
 
   void _sendData(String data) {
@@ -1110,6 +1175,21 @@ class _MainPageState extends State<MainPage> {
         centerTitle: true,
         title: const Text('Watchmen Box'),
         actions: [
+          // Botón de configuración WiFi
+          IconButton(
+            icon: const Icon(Icons.settings_input_antenna),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => WifiConfigPage(
+                    connection: _connection,
+                  ),
+                ),
+              );
+            },
+            tooltip: 'Configurar WiFi ESP32',
+          ),
           // Botón de logout
           IconButton(
             icon: const Icon(Icons.logout),
