@@ -168,9 +168,10 @@ class _WifiConfigPageState extends State<WifiConfigPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: const Color(0xFF0F172A),
       appBar: AppBar(
         title: const Text('Configuración WiFi'),
-        backgroundColor: Colors.orange.shade700,
+        backgroundColor: const Color(0xFF6366F1),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
@@ -182,8 +183,8 @@ class _WifiConfigPageState extends State<WifiConfigPage> {
               // Indicador de conexión BT
               Card(
                 color: widget.connection?.isConnected == true
-                    ? Colors.green.shade50
-                    : Colors.red.shade50,
+                    ? const Color(0xFF1E293B)
+                    : const Color(0xFF1E293B),
                 child: Padding(
                   padding: const EdgeInsets.all(12),
                   child: Row(
@@ -193,8 +194,8 @@ class _WifiConfigPageState extends State<WifiConfigPage> {
                             ? Icons.bluetooth_connected
                             : Icons.bluetooth_disabled,
                         color: widget.connection?.isConnected == true
-                            ? Colors.green
-                            : Colors.red,
+                            ? Colors.green.shade400
+                            : Colors.red.shade400,
                       ),
                       const SizedBox(width: 8),
                       Text(
@@ -204,8 +205,8 @@ class _WifiConfigPageState extends State<WifiConfigPage> {
                         style: TextStyle(
                           fontWeight: FontWeight.bold,
                           color: widget.connection?.isConnected == true
-                              ? Colors.green.shade800
-                              : Colors.red.shade800,
+                              ? Colors.green.shade400
+                              : Colors.red.shade400,
                         ),
                       ),
                     ],
@@ -220,7 +221,7 @@ class _WifiConfigPageState extends State<WifiConfigPage> {
                   const Expanded(
                     child: Text(
                       'Configura la red WiFi para que tu ESP32 pueda enviar datos a la nube.',
-                      style: TextStyle(fontSize: 14, color: Colors.grey),
+                      style: TextStyle(fontSize: 14, color: Colors.white70),
                     ),
                   ),
                   if (_ssidController.text.isNotEmpty || _passwordController.text.isNotEmpty)
@@ -239,15 +240,26 @@ class _WifiConfigPageState extends State<WifiConfigPage> {
               // Campo SSID
               TextFormField(
                 controller: _ssidController,
+                style: const TextStyle(color: Colors.white),
                 decoration: InputDecoration(
                   labelText: 'Nombre de la red (SSID)',
+                  labelStyle: const TextStyle(color: Colors.white70),
                   hintText: 'Ej: MiWiFi_2.4GHz',
-                  prefixIcon: const Icon(Icons.wifi),
+                  hintStyle: TextStyle(color: Colors.grey.shade600),
+                  prefixIcon: Icon(Icons.wifi, color: Colors.blue.shade400),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: Colors.grey.shade700),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: Color(0xFF6366F1), width: 2),
+                  ),
                   filled: true,
-                  fillColor: Colors.grey.shade50,
+                  fillColor: const Color(0xFF1E293B),
                 ),
                 validator: (value) {
                   if (value == null || value.trim().isEmpty) {
@@ -263,15 +275,19 @@ class _WifiConfigPageState extends State<WifiConfigPage> {
               TextFormField(
                 controller: _passwordController,
                 obscureText: _obscurePassword,
+                style: const TextStyle(color: Colors.white),
                 decoration: InputDecoration(
                   labelText: 'Contraseña WiFi',
+                  labelStyle: const TextStyle(color: Colors.white70),
                   hintText: 'Contraseña de tu red',
-                  prefixIcon: const Icon(Icons.lock),
+                  hintStyle: TextStyle(color: Colors.grey.shade600),
+                  prefixIcon: Icon(Icons.lock, color: Colors.blue.shade400),
                   suffixIcon: IconButton(
                     icon: Icon(
                       _obscurePassword
                           ? Icons.visibility
                           : Icons.visibility_off,
+                      color: Colors.grey.shade400,
                     ),
                     onPressed: () {
                       setState(() {
@@ -282,8 +298,16 @@ class _WifiConfigPageState extends State<WifiConfigPage> {
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: Colors.grey.shade700),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: Color(0xFF6366F1), width: 2),
+                  ),
                   filled: true,
-                  fillColor: Colors.grey.shade50,
+                  fillColor: const Color(0xFF1E293B),
                 ),
                 validator: (value) {
                   if (value == null || value.trim().isEmpty) {
@@ -319,7 +343,7 @@ class _WifiConfigPageState extends State<WifiConfigPage> {
                     style: const TextStyle(fontSize: 16),
                   ),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.orange.shade700,
+                    backgroundColor: const Color(0xFF6366F1),
                     foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
@@ -373,7 +397,7 @@ class _WifiConfigPageState extends State<WifiConfigPage> {
                 icon: const Icon(Icons.delete_outline, size: 18),
                 label: const Text('Limpiar datos guardados'),
                 style: TextButton.styleFrom(
-                  foregroundColor: Colors.grey.shade600,
+                  foregroundColor: Colors.grey.shade400,
                 ),
               ),
               const SizedBox(height: 8),
@@ -383,22 +407,25 @@ class _WifiConfigPageState extends State<WifiConfigPage> {
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: _statusColor.withOpacity(0.1),
+                    color: const Color(0xFF1E293B),
                     borderRadius: BorderRadius.circular(8),
                     border: Border.all(color: _statusColor),
                   ),
                   child: Row(
                     children: [
-                      Icon(_statusColor == Colors.green
-                          ? Icons.check_circle
-                          : _statusColor == Colors.red
-                              ? Icons.error
-                              : Icons.info),
+                      Icon(
+                        _statusColor == Colors.green
+                            ? Icons.check_circle
+                            : _statusColor == Colors.red
+                                ? Icons.error
+                                : Icons.info,
+                        color: _statusColor,
+                      ),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
                           _statusMessage,
-                          style: TextStyle(color: _statusColor),
+                          style: TextStyle(color: Colors.white),
                         ),
                       ),
                     ],
@@ -408,8 +435,13 @@ class _WifiConfigPageState extends State<WifiConfigPage> {
 
               // Ayuda
               ExpansionTile(
-                title: const Text('¿Cómo funciona esto?'),
-                leading: const Icon(Icons.help_outline),
+                title: const Text(
+                  '¿Cómo funciona esto?',
+                  style: TextStyle(color: Colors.white),
+                ),
+                leading: Icon(Icons.help_outline, color: Colors.blue.shade400),
+                iconColor: Colors.white,
+                collapsedIconColor: Colors.grey.shade400,
                 children: [
                   Padding(
                     padding: const EdgeInsets.all(16),
@@ -452,10 +484,18 @@ class _WifiConfigPageState extends State<WifiConfigPage> {
         children: [
           Text(
             number,
-            style: const TextStyle(fontWeight: FontWeight.bold),
+            style: const TextStyle(
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+            ),
           ),
           const SizedBox(width: 8),
-          Expanded(child: Text(text)),
+          Expanded(
+            child: Text(
+              text,
+              style: const TextStyle(color: Colors.white70),
+            ),
+          ),
         ],
       ),
     );

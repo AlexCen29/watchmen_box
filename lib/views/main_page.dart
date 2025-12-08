@@ -1114,7 +1114,19 @@ class _MainPageState extends State<MainPage> {
     _bluetooth.onStateChanged().listen((state) {
       switch (state) {
         case BluetoothState.STATE_OFF:
-          setState(() => _bluetoothState = false);
+          setState(() {
+            _bluetoothState = false;
+            // Limpiar la conexión y datos cuando se apaga el Bluetooth
+            _deviceConnected = null;
+            _connection = null;
+            _devices = [];
+            temperatureValue = "--";
+            humidityValue = "--";
+            gasValue = "--";
+            alertaGas = false;
+            tempAlert = false;
+            humAlert = false;
+          });
           break;
         case BluetoothState.STATE_ON:
           setState(() => _bluetoothState = true);
@@ -1171,15 +1183,36 @@ class _MainPageState extends State<MainPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: const Color(0xFF0F172A), // Color oscuro de fondo como la web
       appBar: AppBar(
-        centerTitle: true,
-        title: const Text('Watchmen Box'),
+        backgroundColor: const Color(0xFF1E293B),
+        elevation: 0,
+        centerTitle: false,
+        title: Row(
+          children: [
+            // Logo
+            Image.asset(
+              'assets/img/logo.png',
+              height: 32,
+              width: 32,
+            ),
+            const SizedBox(width: 12),
+            const Text(
+              'WatchBox',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
         actions: [
           // Botón de configuración WiFi
           IconButton(
             icon: Icon(
               Icons.settings_input_antenna,
-              color: (_connection?.isConnected ?? false) ? null : Colors.grey,
+              color: (_connection?.isConnected ?? false) ? Colors.white : Colors.grey.shade500,
             ),
             onPressed: (_connection?.isConnected ?? false)
                 ? () {
@@ -1213,7 +1246,7 @@ class _MainPageState extends State<MainPage> {
           ),
           // Botón de logout
           IconButton(
-            icon: const Icon(Icons.logout),
+            icon: const Icon(Icons.logout, color: Colors.white),
             onPressed: () {
               // Mostrar diálogo de confirmación
               showDialog(
@@ -1228,7 +1261,18 @@ class _MainPageState extends State<MainPage> {
                         child: const Text('Cancelar'),
                       ),
                       ElevatedButton(
-                        onPressed: () {
+                        onPressed: () async {
+                          // Desconectar Bluetooth si hay conexión activa
+                          if (_connection?.isConnected ?? false) {
+                            try {
+                              _sendData("LED_DESCONECTADO");
+                              await Future.delayed(const Duration(milliseconds: 300));
+                              await _connection?.finish();
+                            } catch (e) {
+                              print('Error al desconectar Bluetooth: $e');
+                            }
+                          }
+                          
                           // Ejecutar logout
                           context.read<AuthBloc>().add(LogoutEvent());
                           Navigator.of(context).pop();
@@ -1259,7 +1303,7 @@ class _MainPageState extends State<MainPage> {
                             color: Colors.white,
                           ),
                         )
-                        : const Icon(Icons.sync),
+                        : const Icon(Icons.sync, color: Colors.white),
                 onPressed: _isSyncing ? null : _showSyncDialog,
                 tooltip: 'Sincronizar datos',
               ),
@@ -1309,17 +1353,21 @@ class _MainPageState extends State<MainPage> {
           await _bluetooth.requestDisable();
         }
       },
-      tileColor: Colors.black26,
+      tileColor: const Color(0xFF1E293B),
       title: Text(
         _bluetoothState ? "Bluetooth encendido" : "Bluetooth apagado",
+        style: const TextStyle(color: Colors.white),
       ),
     );
   }
 
   Widget _infoDevice() {
     return ListTile(
-      tileColor: Colors.black12,
-      title: Text("Conectado a: ${_deviceConnected?.name ?? "ninguno"}"),
+      tileColor: const Color(0xFF1E293B),
+      title: Text(
+        "Conectado a: ${_deviceConnected?.name ?? "ninguno"}",
+        style: const TextStyle(color: Colors.white),
+      ),
       trailing:
           _connection?.isConnected ?? false
               ? TextButton(
@@ -1362,6 +1410,9 @@ class _MainPageState extends State<MainPage> {
                     });
                   }
                 },
+                style: TextButton.styleFrom(
+                  foregroundColor: Colors.white,
+                ),
                 child: const Text("Desconectar"),
               )
               : TextButton(
@@ -1383,7 +1434,7 @@ class _MainPageState extends State<MainPage> {
                         );
                       },
                 style: TextButton.styleFrom(
-                  foregroundColor: _bluetoothState ? null : Colors.grey,
+                  foregroundColor: _bluetoothState ? Colors.white : Colors.grey,
                 ),
                 child: const Text("Ver dispositivos"),
               ),
@@ -1427,17 +1478,23 @@ class _MainPageState extends State<MainPage> {
     // }
 
     return _isConnecting
-        ? const Center(child: CircularProgressIndicator())
+        ? const Center(child: CircularProgressIndicator(color: Colors.white))
         : SingleChildScrollView(
           child: Container(
-            color: Colors.grey.shade100,
+            color: const Color(0xFF0F172A),
             child: Column(
               children: [
                 ...[
                   for (final device in _devices)
                     ListTile(
-                      title: Text(device.name ?? device.address),
+                      title: Text(
+                        device.name ?? device.address,
+                        style: const TextStyle(color: Colors.white),
+                      ),
                       trailing: TextButton(
+                        style: TextButton.styleFrom(
+                          foregroundColor: Colors.blue.shade400,
+                        ),
                         child: const Text('conectar'),
                         onPressed: () async {
                           // Verificar si ya estamos conectados antes de intentar conectar
@@ -1542,13 +1599,17 @@ class _MainPageState extends State<MainPage> {
       animate: _connection?.isConnected ?? false,
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 24.0, horizontal: 8.0),
-        color: Colors.black12,
+        color: const Color(0xFF0F172A),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             const Text(
               'Monitoreo en tiempo real',
-              style: TextStyle(fontSize: 18.0, fontWeight: FontWeight.bold),
+              style: TextStyle(
+                fontSize: 18.0,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
             ),
 
             const SizedBox(height: 16),

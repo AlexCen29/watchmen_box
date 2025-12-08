@@ -42,7 +42,7 @@ class LoginForm extends StatelessWidget {
               barrierDismissible: false,
               builder: (context) => const Center(
                 child: CircularProgressIndicator(
-                  color: Color(0xFFF48C06),
+                  color: Color(0xFF6366F1),
                 ),
               ),
             );
@@ -63,7 +63,7 @@ class LoginForm extends StatelessWidget {
           child: Column(
             children: [
               const SizedBox(height: 20),
-              Text('Login', style: titlOrangeF24),
+              Text('Login', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white)),
               const SizedBox(height: 45),
               CustomTextFormField(
                 width: sizeWidth * 0.7,
@@ -71,8 +71,9 @@ class LoginForm extends StatelessWidget {
                 hint: "Ingresa tu correo",
                 icon: Icons.email,
                 keyboardType: TextInputType.emailAddress,
-                color: const Color(0xFFF48C06),
-                textStyle: descriptionOrangeF14,
+                color: const Color(0xFF6366F1),
+                fillColor: const Color(0xFF1E293B),
+                textStyle: const TextStyle(fontSize: 14, color: Colors.white),
                 onChanged: (value) => registerFormBloc.add(UpdateEmail(value)),
                 errorMessage: registerFormBloc.state.isFormPosted
                     ? email.errorMessage
@@ -85,9 +86,10 @@ class LoginForm extends StatelessWidget {
                 hint: 'Ingresa tu contraseña',
                 icon: Icons.lock,
                 keyboardType: TextInputType.visiblePassword,
-                color: const Color(0xFFF48C06),
+                color: const Color(0xFF6366F1),
+                fillColor: const Color(0xFF1E293B),
                 obscureText: true,
-                textStyle: descriptionOrangeF14,
+                textStyle: const TextStyle(fontSize: 14, color: Colors.white),
                 onChanged: (value) =>
                     registerFormBloc.add(UpdatePassword(value)),
                 errorMessage: registerFormBloc.state.isFormPosted
@@ -100,7 +102,7 @@ class LoginForm extends StatelessWidget {
                 height: 50,
                 child: CustomFilledButtomn(
                   text: 'Iniciar Sesión',
-                  buttonColor: const Color(0xFFF48C06),
+                  buttonColor: const Color(0xFF6366F1),
                   onPressed: registerFormBloc.state.isPosting
                   ? null //se desactivo el boton cunado se estan autenticando las credenciales.
                   : () => registerFormBloc.add(SubmitForm())

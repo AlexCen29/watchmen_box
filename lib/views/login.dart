@@ -12,7 +12,7 @@ class LoginScreen extends StatelessWidget {
     final size = MediaQuery.of(context).size;
 
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: const Color(0xFF0F172A),
       body: BlocProvider(
         create: (context) => RegisterFormBloc(authBloc: context.read<AuthBloc>()),
         child: Stack(
@@ -21,7 +21,7 @@ class LoginScreen extends StatelessWidget {
             Container(
               height: size.height * 0.5,
               width: double.infinity,
-              color: const Color(0xFFF48C06), //TODO: MANAGE COLORS
+              color: const Color(0xFF1E293B),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.start,
                 children: [
@@ -56,14 +56,14 @@ class FormContainer extends StatelessWidget {
       height: height, // altura fija, no se mueve con teclado
       width: double.infinity,
       decoration: const BoxDecoration(
-        color: Colors.white,
+        color: Color(0xFF0F172A),
         borderRadius: BorderRadius.only(
           topLeft: Radius.circular(100),
           topRight: Radius.circular(100),
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black12,
+            color: Colors.black26,
             blurRadius: 10,
             offset: Offset(0, -4),
           ),
@@ -104,7 +104,7 @@ class LoginIcon extends StatelessWidget {
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               gradient: LinearGradient(
-                colors: [Colors.orange, Colors.red],
+                colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
