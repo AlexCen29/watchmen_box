@@ -144,7 +144,7 @@ class _WifiConfigPageState extends State<WifiConfigPage> {
               ],
             ),
             content: const Text(
-              'La configuración WiFi fue enviada al ESP32.\n\n'
+              'La configuración WiFi fue enviada a la WatchBox.\n\n'
               'El dispositivo intentará conectarse a la red configurada.',
             ),
             actions: [
@@ -220,7 +220,7 @@ class _WifiConfigPageState extends State<WifiConfigPage> {
                 children: [
                   const Expanded(
                     child: Text(
-                      'Configura la red WiFi para que tu ESP32 pueda enviar datos a la nube.',
+                      'Configura la red WiFi para que tu WatchBox pueda enviar datos a la página web.',
                       style: TextStyle(fontSize: 14, color: Colors.white70),
                     ),
                   ),
@@ -454,11 +454,11 @@ class _WifiConfigPageState extends State<WifiConfigPage> {
                         ),
                         _buildHelpItem(
                           '2.',
-                          'Al presionar "Enviar", se enviará la configuración al ESP32 vía Bluetooth',
+                          'Al presionar "Enviar", se enviará la configuración a la WatchBox vía Bluetooth',
                         ),
                         _buildHelpItem(
                           '3.',
-                          'El ESP32 se desconectará de la red actual e intentará conectarse a la nueva',
+                          'La WatchBox se desconectará de la red actual e intentará conectarse a la nueva',
                         ),
                         _buildHelpItem(
                           '4.',
