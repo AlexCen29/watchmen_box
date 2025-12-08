@@ -1177,18 +1177,39 @@ class _MainPageState extends State<MainPage> {
         actions: [
           // Botón de configuración WiFi
           IconButton(
-            icon: const Icon(Icons.settings_input_antenna),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => WifiConfigPage(
-                    connection: _connection,
-                  ),
-                ),
-              );
-            },
-            tooltip: 'Configurar WiFi ESP32',
+            icon: Icon(
+              Icons.settings_input_antenna,
+              color: (_connection?.isConnected ?? false) ? null : Colors.grey,
+            ),
+            onPressed: (_connection?.isConnected ?? false)
+                ? () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => WifiConfigPage(
+                          connection: _connection,
+                        ),
+                      ),
+                    );
+                  }
+                : () {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Row(
+                          children: [
+                            Icon(Icons.bluetooth_disabled, color: Colors.white),
+                            SizedBox(width: 8),
+                            Text('Necesitas conectarte a un dispositivo Bluetooth primero'),
+                          ],
+                        ),
+                        backgroundColor: Colors.orange,
+                        duration: Duration(seconds: 2),
+                      ),
+                    );
+                  },
+            tooltip: (_connection?.isConnected ?? false)
+                ? 'Configurar WiFi ESP32'
+                : 'Conecta un dispositivo Bluetooth primero',
           ),
           // Botón de logout
           IconButton(
@@ -1344,7 +1365,26 @@ class _MainPageState extends State<MainPage> {
                 child: const Text("Desconectar"),
               )
               : TextButton(
-                onPressed: _getDevices,
+                onPressed: _bluetoothState
+                    ? _getDevices
+                    : () {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Row(
+                              children: [
+                                Icon(Icons.bluetooth_disabled, color: Colors.white),
+                                SizedBox(width: 8),
+                                Text('Activa el Bluetooth primero'),
+                              ],
+                            ),
+                            backgroundColor: Colors.orange,
+                            duration: Duration(seconds: 2),
+                          ),
+                        );
+                      },
+                style: TextButton.styleFrom(
+                  foregroundColor: _bluetoothState ? null : Colors.grey,
+                ),
                 child: const Text("Ver dispositivos"),
               ),
     );
@@ -1416,7 +1456,13 @@ class _MainPageState extends State<MainPage> {
                           try {
                             _connection = await BluetoothConnection.toAddress(
                               device.address,
+                            ).timeout(
+                              const Duration(seconds: 10),
+                              onTimeout: () {
+                                throw Exception('Tiempo de conexión agotado');
+                              },
                             );
+                            
                             _deviceConnected = device;
                             _devices = [];
                             _isConnecting = false;
@@ -1426,23 +1472,58 @@ class _MainPageState extends State<MainPage> {
                             setState(() {});
                             
                             // Mostrar mensaje de éxito
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text('Conectado a ${device.name ?? device.address}'),
-                                backgroundColor: Colors.green,
-                              ),
-                            );
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Row(
+                                    children: [
+                                      const Icon(Icons.check_circle, color: Colors.white),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text('Conectado a ${device.name ?? device.address}'),
+                                      ),
+                                    ],
+                                  ),
+                                  backgroundColor: Colors.green,
+                                  duration: const Duration(seconds: 2),
+                                ),
+                              );
+                            }
                           } catch (e) {
-                            setState(() => _isConnecting = false);
+                            setState(() {
+                              _isConnecting = false;
+                              _connection = null;
+                              _deviceConnected = null;
+                            });
                             
-                            // Mostrar error específico
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text('Error al conectar: ${e.toString()}'),
-                                backgroundColor: Colors.red,
-                                duration: const Duration(seconds: 4),
-                              ),
-                            );
+                            // Determinar mensaje de error más amigable
+                            String errorMessage;
+                            if (e.toString().contains('Tiempo de conexión agotado')) {
+                              errorMessage = 'No se pudo conectar. El dispositivo no responde.';
+                            } else if (e.toString().contains('socket might closed or timeout')) {
+                              errorMessage = 'Dispositivo no disponible o apagado';
+                            } else if (e.toString().contains('read failed')) {
+                              errorMessage = 'Error de lectura. Dispositivo desconectado';
+                            } else {
+                              errorMessage = 'No se pudo conectar al dispositivo';
+                            }
+                            
+                            // Mostrar error de forma amigable
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Row(
+                                    children: [
+                                      const Icon(Icons.bluetooth_disabled, color: Colors.white),
+                                      const SizedBox(width: 8),
+                                      Expanded(child: Text(errorMessage)),
+                                    ],
+                                  ),
+                                  backgroundColor: Colors.red,
+                                  duration: const Duration(seconds: 3),
+                                ),
+                              );
+                            }
                             
                             print('Error de conexión: $e');
                           }

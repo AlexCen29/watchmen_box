@@ -2,6 +2,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_bluetooth_serial/flutter_bluetooth_serial.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:watchmen_box/providers/auth_bloc/auth_bloc.dart';
 
 class WifiConfigPage extends StatefulWidget {
@@ -27,10 +28,43 @@ class _WifiConfigPageState extends State<WifiConfigPage> {
   Color _statusColor = Colors.grey;
 
   @override
+  void initState() {
+    super.initState();
+    _loadSavedConfiguration();
+  }
+
+  @override
   void dispose() {
     _ssidController.dispose();
     _passwordController.dispose();
     super.dispose();
+  }
+
+  // Cargar configuración guardada
+  Future<void> _loadSavedConfiguration() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final savedSsid = prefs.getString('wifi_ssid') ?? '';
+      final savedPassword = prefs.getString('wifi_password') ?? '';
+      
+      setState(() {
+        _ssidController.text = savedSsid;
+        _passwordController.text = savedPassword;
+      });
+    } catch (e) {
+      print('Error al cargar configuración: $e');
+    }
+  }
+
+  // Guardar configuración
+  Future<void> _saveConfiguration() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('wifi_ssid', _ssidController.text.trim());
+      await prefs.setString('wifi_password', _passwordController.text.trim());
+    } catch (e) {
+      print('Error al guardar configuración: $e');
+    }
   }
 
   Future<void> _sendConfiguration() async {
@@ -67,6 +101,9 @@ class _WifiConfigPageState extends State<WifiConfigPage> {
 
       final ssid = _ssidController.text.trim();
       final password = _passwordController.text.trim();
+
+      // Guardar la configuración para uso futuro
+      await _saveConfiguration();
 
       // Enviar SSID
       widget.connection!.output.add(
@@ -178,9 +215,24 @@ class _WifiConfigPageState extends State<WifiConfigPage> {
               const SizedBox(height: 24),
 
               // Información
-              const Text(
-                'Configura la red WiFi para que tu ESP32 pueda enviar datos a la nube.',
-                style: TextStyle(fontSize: 14, color: Colors.grey),
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'Configura la red WiFi para que tu ESP32 pueda enviar datos a la nube.',
+                      style: TextStyle(fontSize: 14, color: Colors.grey),
+                    ),
+                  ),
+                  if (_ssidController.text.isNotEmpty || _passwordController.text.isNotEmpty)
+                    Tooltip(
+                      message: 'Datos cargados desde configuración guardada',
+                      child: Icon(
+                        Icons.save,
+                        size: 18,
+                        color: Colors.green.shade600,
+                      ),
+                    ),
+                ],
               ),
               const SizedBox(height: 24),
 
@@ -276,6 +328,55 @@ class _WifiConfigPageState extends State<WifiConfigPage> {
                 ),
               ),
               const SizedBox(height: 16),
+
+              // Botón para limpiar datos guardados
+              TextButton.icon(
+                onPressed: () async {
+                  final confirmed = await showDialog<bool>(
+                    context: context,
+                    builder: (context) => AlertDialog(
+                      title: const Text('Limpiar datos guardados'),
+                      content: const Text(
+                        '¿Quieres borrar el SSID y contraseña guardados?',
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(context, false),
+                          child: const Text('Cancelar'),
+                        ),
+                        TextButton(
+                          onPressed: () => Navigator.pop(context, true),
+                          child: const Text('Limpiar'),
+                        ),
+                      ],
+                    ),
+                  );
+
+                  if (confirmed == true) {
+                    final prefs = await SharedPreferences.getInstance();
+                    await prefs.remove('wifi_ssid');
+                    await prefs.remove('wifi_password');
+                    setState(() {
+                      _ssidController.clear();
+                      _passwordController.clear();
+                    });
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Datos guardados eliminados'),
+                          backgroundColor: Colors.orange,
+                        ),
+                      );
+                    }
+                  }
+                },
+                icon: const Icon(Icons.delete_outline, size: 18),
+                label: const Text('Limpiar datos guardados'),
+                style: TextButton.styleFrom(
+                  foregroundColor: Colors.grey.shade600,
+                ),
+              ),
+              const SizedBox(height: 8),
 
               // Mensaje de estado
               if (_statusMessage.isNotEmpty)
